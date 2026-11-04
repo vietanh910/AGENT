@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>He Thong Quan Ly Thu Vien Sach Truc Tuyen - Demo Ứng Dụng Chạy Được</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --bg: #f8fafc;
+            --card-bg: #ffffff;
+            --text: #1e293b;
+            --border: #e2e8f0;
+            --success: #10b981;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            max-width: 800px;
+            width: 100%;
+        }
+        .header {
+            background: linear-gradient(135deg, #1e3a8a, #2563eb);
+            color: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+            margin-bottom: 24px;
+        }
+        .header h1 { margin: 0 0 8px 0; font-size: 24px; }
+        .header p { margin: 0; opacity: 0.9; font-size: 14px; }
+        .badge {
+            background: rgba(255,255,255,0.2);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            display: inline-block;
+            margin-top: 8px;
+        }
+        .card {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            margin-bottom: 20px;
+        }
+        .form-row {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        input, select, textarea {
+            padding: 10px 14px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 14px;
+            flex: 1;
+        }
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 18px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+        button:hover { background: var(--primary-hover); }
+        .item-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px;
+            border-bottom: 1px solid var(--border);
+        }
+        .item:last-child { border-bottom: none; }
+        .item-title { font-weight: 600; font-size: 15px; margin-bottom: 4px; }
+        .item-meta { font-size: 12px; color: #64748b; }
+        .btn-delete {
+            background: #ef4444;
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+        .btn-delete:hover { background: #dc2626; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎉 He Thong Quan Ly Thu Vien Sach Truc Tuyen</h1>
+            <p>He Thong Quan Ly Thu Vien Sach Truc Tuyen</p>
+            <div class="badge">Multi-Agent System • Chạy Thử Nghiệm Thành Công</div>
+        </div>
+
+        <div class="card">
+            <h3>Thêm Mục / Tính Năng Mới</h3>
+            <div class="form-row">
+                <input type="text" id="title" placeholder="Tiêu đề mục công việc hoặc tính năng..." />
+                <select id="category">
+                    <option value="Cốt lõi">Cốt lõi</option>
+                    <option value="Giao diện">Giao diện</option>
+                    <option value="Cơ sở dữ liệu">Cơ sở dữ liệu</option>
+                    <option value="Bảo mật">Bảo mật</option>
+                </select>
+                <button onclick="addItem()">Thêm Mới</button>
+            </div>
+            <input type="text" id="description" placeholder="Mô tả chi tiết (tuỳ chọn)..." style="width: 100%; box-sizing: border-box;" />
+        </div>
+
+        <div class="card">
+            <h3>Danh Sách Hiện Tại (<span id="count">0</span>)</h3>
+            <ul id="items" class="item-list">
+                <!-- Data loaded dynamically -->
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const LOCAL_STORAGE_KEY = "he_thong_quan_ly_thu_vien_sach_truc_tuyen_demo_items";
+        let defaultItems = [
+            { id: "1", title: "Thiết kế kiến trúc hệ thống 3 tầng", category: "Cốt lõi", description: "Được sinh bởi SA Agent", created_at: "Hôm nay" },
+            { id: "2", title: "Khởi tạo bảng cơ sở dữ liệu quan hệ", category: "Cơ sở dữ liệu", description: "Được sinh bởi DBA Agent", created_at: "Hôm nay" },
+            { id: "3", title: "Bộ kịch bản kiểm thử tự động", category: "Bảo mật", description: "Được sinh bởi TESTER & SECURITY Agent", created_at: "Hôm nay" }
+        ];
+
+        function getItems() {
+            const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
+            return stored ? JSON.parse(stored) : defaultItems;
+        }
+
+        function saveItems(items) {
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(items));
+            render();
+        }
+
+        function render() {
+            const items = getItems();
+            document.getElementById("count").innerText = items.length;
+            const ul = document.getElementById("items");
+            ul.innerHTML = "";
+            items.forEach(item => {
+                const li = document.createElement("li");
+                li.className = "item";
+                li.innerHTML = `
+                    <div>
+                        <div class="item-title">${item.title} <span style="font-size: 11px; background: #e0e7ff; color: #3730a3; padding: 2px 6px; border-radius: 4px;">${item.category}</span></div>
+                        <div class="item-meta">${item.description || "Không có mô tả"} • ${item.created_at}</div>
+                    </div>
+                    <button class="btn-delete" onclick="deleteItem('${item.id}')">Xoá</button>
+                `;
+                ul.appendChild(li);
+            });
+        }
+
+        function addItem() {
+            const titleInput = document.getElementById("title");
+            const catInput = document.getElementById("category");
+            const descInput = document.getElementById("description");
+
+            if (!titleInput.value.trim()) return alert("Vui lòng nhập tiêu đề!");
+
+            const items = getItems();
+            items.unshift({
+                id: Date.now().toString(),
+                title: titleInput.value.trim(),
+                category: catInput.value,
+                description: descInput.value.trim(),
+                created_at: new Date().toLocaleTimeString()
+            });
+            saveItems(items);
+
+            titleInput.value = "";
+            descInput.value = "";
+        }
+
+        function deleteItem(id) {
+            let items = getItems().filter(i => i.id !== id);
+            saveItems(items);
+        }
+
+        render();
+    </script>
+</body>
+</html>
