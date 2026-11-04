@@ -177,11 +177,13 @@ def call_agent_step(
     try:
         with httpx.Client(timeout=timeout) as client:
             res = client.post(f"{url.rstrip('/')}/tasks", json=payload, headers=headers)
-            duration_ms = int((time.time() - t0) * 1000)
+            duration_s = time.time() - t0
+            duration_ms = int(duration_s * 1000)
 
             print(f"<<< NHẬN LẠI KẾT QUẢ TỪ AGENT: {agent_id} (Thời gian: {duration_ms}ms)")
             if res.status_code == 200:
                 data = res.json()
+                data["_duration_s"] = duration_s
                 status = data.get("status", "COMPLETED")
                 summary = data.get("summary", "Tác vụ đã hoàn tất thành công.")
                 artifacts = data.get("artifacts", [])
@@ -199,11 +201,12 @@ def call_agent_step(
                     return data, False
             else:
                 print(f"  [!] HTTP {res.status_code}: {res.text[:120]}")
-                return {}, False
+                return {"_duration_s": time.time() - t0}, False
     except Exception as e:
-        duration_ms = int((time.time() - t0) * 1000)
+        duration_s = time.time() - t0
+        duration_ms = int(duration_s * 1000)
         print(f"<<< [!] Lỗi kết nối tới {agent_id} sau {duration_ms}ms: {e}")
-        return {}, False
+        return {"_duration_s": duration_s}, False
 
 
 def download_remote_artifact(url: str, token: str, artifact_id: str) -> bytes | None:
@@ -546,8 +549,10 @@ Sau đó truy cập:
     (src_dir / "README.md").write_text(run_readme, encoding="utf-8")
 
 
-def sync_to_linear_with_modules(project_name: str, brief: str, deliverables_info: List[dict]) -> str:
-    """Đồng bộ workflow lên Linear chia theo Module, mỗi Module có ít nhất 5 subtask."""
+def init_linear_live_workflow(project_name: str, brief: str, steps_config: List[tuple], agent_list: List[dict]) -> Optional[Dict[str, Any]]:
+    """Khởi tạo toàn bộ Project, 2 Module và 10 Subtask trên Linear ở trạng thái Todo ngay từ đầu.
+    Giúp người dùng có thể mở Linear và theo dõi trực tiếp trạng thái dịch chuyển real-time.
+    """
     env_cfg = dotenv_values("control/.env")
     if not env_cfg.get("LINEAR_API_KEY"):
         env_cfg = dotenv_values(".env")
@@ -556,86 +561,87 @@ def sync_to_linear_with_modules(project_name: str, brief: str, deliverables_info
     team_id = env_cfg.get("LINEAR_TEAM_ID", "95ea7ff9-5afb-4cc3-96a7-1bf238580335")
 
     if not api_key:
-        print("[!] Bỏ qua Linear Sync vì chưa cấu hình LINEAR_API_KEY.")
-        return ""
+        print("\n[!] Bỏ qua Linear Live Sync vì chưa cấu hình LINEAR_API_KEY trong .env")
+        return None
 
-    print("\n" + "=" * 90)
-    print(" BƯỚC 3: ĐỒNG BỘ WORKFLOW LÊN LINEAR (DẠNG MODULE & ÍT NHẤT 5 SUBTASK/MODULE)")
-    print("=" * 90)
+    print("\n" + "=" * 105)
+    print(" BƯỚC 2: KHỞI TẠO WORKFLOW TRÊN LINEAR (REAL-TIME TRACKING: 2 MODULES & 10 SUBTASKS)")
+    print("=" * 105)
 
-    tracker = LinearClient(api_key=api_key, dry_run=False)
-    yaml_cfg = load_linear_config()
-    schema = initialize_and_validate_linear_schema(tracker=tracker, team_id=team_id, config=yaml_cfg)
+    try:
+        tracker = LinearClient(api_key=api_key, dry_run=False)
+        yaml_cfg = load_linear_config()
+        schema = initialize_and_validate_linear_schema(tracker=tracker, team_id=team_id, config=yaml_cfg)
 
-    done_state_id = schema.state_name_to_id.get("Done")
+        todo_state_id = schema.state_name_to_id.get("Todo") or schema.state_name_to_id.get("todo")
+        in_progress_state_id = schema.state_name_to_id.get("In Progress") or schema.state_name_to_id.get("in progress")
+        done_state_id = schema.state_name_to_id.get("Done") or schema.state_name_to_id.get("done")
 
-    # 1. Project & Milestone
-    run_code = f"RUN-{uuid.uuid4().hex[:6].upper()}"
-    p_name = f"Dự Án: {project_name} ({run_code})"
-    project_id = tracker.ensure_project(name=p_name, description=brief, team_ids=[team_id])
-    print(f"[+] Đã tạo Project Linear: {p_name}")
-    print(f"    -> Project ID: {project_id}")
+        # 1. Project & Milestone
+        run_code = f"RUN-{uuid.uuid4().hex[:6].upper()}"
+        p_name = f"Dự Án: {project_name} ({run_code})"
+        project_id = tracker.ensure_project(name=p_name, description=brief, team_ids=[team_id])
+        print(f"[+] Đã tạo Project Linear: {p_name}")
+        print(f"    -> Project ID: {project_id}")
 
-    milestone_id = tracker.ensure_milestone(
-        name="Sprint 1 - Thiết Kế & Triển Khai MVP",
-        project_id=project_id,
-        description="Toàn bộ quy trình thiết kế, lập trình và chuyển giao hệ thống."
-    )
-    print(f"[+] Đã tạo Milestone: Sprint 1 - Thiết Kế & Triển Khai MVP")
+        milestone_id = tracker.ensure_milestone(
+            name="Sprint 1 - Thiết Kế & Triển Khai MVP",
+            project_id=project_id,
+            description="Toàn bộ quy trình thiết kế, lập trình và chuyển giao hệ thống."
+        )
+        print(f"[+] Đã tạo Milestone: Sprint 1 - Thiết Kế & Triển Khai MVP")
 
-    # 2. Hai Module chính (Parent Issues)
-    modules = [
-        {
-            "name": f"[Module 1] Quản Lý Xác Thực & Đặc Tả Nền Tảng (Core & Specifications)",
-            "desc": "Bao gồm phân rã sprint, xác định backlog, đặc tả SRS, kiến trúc và mô hình dữ liệu.",
-            "subtasks": [
-                ("PM", "pm-01", "PC1", "[PM • PC1] Lập kế hoạch phân bổ Milestone & Quản lý rủi ro", "01_pm_plan.md"),
-                ("PO", "po-01", "PC3", "[PO • PC3] Xác định danh mục tính năng Product Backlog & User Stories", "02_po_backlog.md"),
-                ("BA", "ba-01", "PC4", "[BA • PC4] Soạn thảo đặc tả yêu cầu chi tiết SRS chuẩn IEEE 830", "03_ba_srs.md"),
-                ("SA", "sa-01", "PC3", "[SA • PC3] Thiết kế kiến trúc hệ thống 3 tầng Microservices", "04_sa_architecture.md"),
-                ("DBA", "dba-01", "PC4", "[DBA • PC4] Thiết kế Database Schema DDL & Chỉ mục dữ liệu", "05_dba_schema.sql"),
-            ]
-        },
-        {
-            "name": f"[Module 2] Hiện Thực Hóa Mã Nguồn & Kiểm Thử Triển Khai (Build & Deploy)",
-            "desc": "Bao gồm lập trình API, viết kịch bản kiểm thử, quét lỗ hổng bảo mật, CI/CD và họp Sprint.",
-            "subtasks": [
-                ("DEV", "dev-01", "PC2", "[DEV • PC2] Lập trình mã nguồn API & Giao diện ứng dụng hoàn chỉnh", "06_dev_source.zip"),
-                ("TESTER", "tester-01", "PC5", "[TESTER • PC5] Xây dựng bộ kịch bản kiểm thử tự động JSON", "07_tester_test_cases.json"),
-                ("SECURITY", "security-01", "PC5", "[SECURITY • PC5] Rà soát an toàn thông tin & Quét lỗ hổng bảo mật", "08_security_report.md"),
-                ("DEVOPS", "devops-01", "PC1", "[DEVOPS • PC1] Đóng gói Docker Container & Triển khai Staging", "09_devops_deployment_report.md"),
-                ("SCRUM_MASTER", "scrum_master-01", "PC2", "[SCRUM MASTER • PC2] Họp tổng kết Sprint Retrospective & Velocity", "10_scrum_retrospective.md"),
-            ]
-        }
-    ]
-
-    all_created_subtasks = []
-
-    for mod_idx, mod in enumerate(modules, 1):
-        print(f"\n[*] Đang tạo Parent Task: {mod['name']}...")
-        parent_id = tracker.upsert_issue(
-            title=mod["name"],
-            description=mod["desc"],
+        # 2. Tạo 2 Parent Modules ở trạng thái Todo
+        mod1_name = "[Module 1] Quản Lý Xác Thực & Đặc Tả Nền Tảng (Core & Specifications)"
+        mod1_desc = "Bao gồm phân rã sprint, xác định backlog, đặc tả SRS, kiến trúc và mô hình dữ liệu."
+        parent1_id = tracker.upsert_issue(
+            title=mod1_name,
+            description=mod1_desc,
             team_id=team_id,
             project_id=project_id,
             milestone_id=milestone_id,
-            state_id=done_state_id,
+            state_id=todo_state_id,
         )
-        print(f"    -> Parent Issue ID: {parent_id}")
+        print(f"[+] Đã tạo Module 1: {mod1_name} -> ID: {parent1_id} [Trạng thái: Todo]")
 
-        print(f"    [*] Đang tạo {len(mod['subtasks'])} Subtasks liên kết tới Parent Task này:")
+        mod2_name = "[Module 2] Hiện Thực Hóa Mã Nguồn & Kiểm Thử Triển Khai (Build & Deploy)"
+        mod2_desc = "Bao gồm lập trình API, viết kịch bản kiểm thử, quét lỗ hổng bảo mật, CI/CD và họp Sprint."
+        parent2_id = tracker.upsert_issue(
+            title=mod2_name,
+            description=mod2_desc,
+            team_id=team_id,
+            project_id=project_id,
+            milestone_id=milestone_id,
+            state_id=todo_state_id,
+        )
+        print(f"[+] Đã tạo Module 2: {mod2_name} -> ID: {parent2_id} [Trạng thái: Todo]")
+
+        # 3. Tạo sẵn 10 Subtasks ở trạng thái Todo
+        subtask_map = {}
         prev_sub_id = None
-        for sub_role, sub_agent, sub_mach, sub_title, sub_art in mod["subtasks"]:
-            role_label_id = schema.label_name_to_id.get(f"agent:{sub_role.lower()}")
+
+        print("\n[*] Đang khởi tạo sẵn 10 Subtasks ở trạng thái 'Todo' trên Linear Kanban...")
+        for step_num, step_name, agent_id, role, action, artifact_name, instruction, extra in steps_config:
+            parent_id = parent1_id if step_num <= 5 else parent2_id
+            mod_label = "Module 1" if step_num <= 5 else "Module 2"
+            agent_info = next((a for a in agent_list if a["agent_id"] == agent_id), None)
+            mach = agent_info["machine"] if agent_info else "PC"
+
+            sub_title = f"[{role} • {agent_id}] {step_name}"
+            role_label_id = schema.label_name_to_id.get(f"agent:{role.lower()}")
             labels = [role_label_id] if role_label_id else []
 
             desc_body = (
                 f"### Phân Công Nhiệm Vụ:\n"
-                f"- **Agent phụ trách:** `{sub_agent}` ({sub_role})\n"
-                f"- **Máy thực thi:** `{sub_mach}`\n"
-                f"- **Thuộc Module:** `{mod['name']}`\n"
-                f"- **Sản phẩm thu được:** `deliverables/{re.sub(r'[^a-zA-Z0-9_]', '', project_name.replace(' ', '_')).lower()}/{sub_art}`\n"
+                f"- **Thứ tự bước:** Bước {step_num}/10\n"
+                f"- **Agent phụ trách:** `{agent_id}` ({role})\n"
+                f"- **Máy thực thi:** `{mach}`\n"
+                f"- **Thuộc Module:** `{mod_label}`\n"
+                f"- **Hành động (Action):** `{action}`\n"
+                f"- **Chỉ đạo thực hiện:** {instruction}\n"
+                f"- **Sản phẩm bàn giao:** `{artifact_name}`\n"
             )
+
             sub_id = tracker.upsert_issue(
                 title=sub_title,
                 description=desc_body,
@@ -643,18 +649,20 @@ def sync_to_linear_with_modules(project_name: str, brief: str, deliverables_info
                 project_id=project_id,
                 milestone_id=milestone_id,
                 parent_id=parent_id,
-                state_id=done_state_id,
+                state_id=todo_state_id,
                 label_ids=labels,
             )
-            print(f"       + [Subtask] {sub_title[:55]}... -> {sub_id}")
-            all_created_subtasks.append(sub_id)
+            subtask_map[step_num] = {
+                "id": sub_id,
+                "title": sub_title,
+                "role": role,
+                "agent_id": agent_id,
+                "machine": mach,
+                "parent_id": parent_id,
+            }
+            print(f"    + [Subtask {step_num:02d}] {sub_title:<55} -> {sub_id} [Todo]")
 
-            tracker.add_comment(
-                issue_id=sub_id,
-                body=f"**[{sub_role} Agent • {sub_agent}]**\nĐã thực thi xong trên {sub_mach}. Sản phẩm đã lưu tại `{sub_art}`."
-            )
-
-            # Relation blocks
+            # Thiết lập liên kết blocks theo chuỗi tuần tự
             if prev_sub_id:
                 try:
                     tracker.add_relation(issue_id=prev_sub_id, related_issue_id=sub_id, relation_type="blocks")
@@ -662,12 +670,107 @@ def sync_to_linear_with_modules(project_name: str, brief: str, deliverables_info
                     pass
             prev_sub_id = sub_id
 
-    print("\n[+] ĐÃ ĐỒNG BỘ 2 MODULE VÀ 10 SUBTASK HOÀN TẤT LÊN LINEAR!")
-    return project_id
+        board_url = "https://linear.app/vietanhnguyen/team/VIE/active"
+        print("\n" + "=" * 105)
+        print(" [LINEAR LIVE] ĐÃ SẴN SÀNG THEO DÕI TRỰC TIẾP!")
+        print(f" • Bảng Kanban trực tiếp: {board_url}")
+        print(" • Mở link trên để quan sát từng Subtask tự động di chuyển: Todo -> In Progress -> Done")
+        print("=" * 105)
+
+        return {
+            "tracker": tracker,
+            "team_id": team_id,
+            "project_id": project_id,
+            "milestone_id": milestone_id,
+            "todo_state_id": todo_state_id,
+            "in_progress_state_id": in_progress_state_id,
+            "done_state_id": done_state_id,
+            "parent1_id": parent1_id,
+            "parent2_id": parent2_id,
+            "subtasks": subtask_map,
+            "board_url": board_url,
+        }
+    except Exception as e:
+        print(f"[!] Lỗi khởi tạo Linear Live Workflow: {e}")
+        return None
+
+
+def linear_update_on_start(linear_ctx: Optional[dict], step_num: int, role: str, agent_id: str, machine: str, action: str, instruction: str):
+    """Cập nhật Subtask sang In Progress và đẩy comment bắt đầu lên Linear ngay khi bước bắt đầu chạy."""
+    if not linear_ctx:
+        return
+    try:
+        tracker = linear_ctx["tracker"]
+        in_prog_state = linear_ctx["in_progress_state_id"]
+
+        # Module 1 bắt đầu ở bước 1, Module 2 bắt đầu ở bước 6
+        if step_num == 1 and linear_ctx.get("parent1_id"):
+            tracker.set_status(linear_ctx["parent1_id"], in_prog_state)
+            print(f"  [LINEAR LIVE] 🚀 Module 1 chuyển trạng thái -> 'IN PROGRESS'")
+        elif step_num == 6 and linear_ctx.get("parent2_id"):
+            tracker.set_status(linear_ctx["parent2_id"], in_prog_state)
+            print(f"  [LINEAR LIVE] 🚀 Module 2 chuyển trạng thái -> 'IN PROGRESS'")
+
+        sub_info = linear_ctx["subtasks"].get(step_num)
+        if sub_info:
+            sub_id = sub_info["id"]
+            tracker.set_status(sub_id, in_prog_state)
+            now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+            comment_body = (
+                f"⏳ **[BẮT ĐẦU XỬ LÝ - REAL-TIME]**\n\n"
+                f"- **Thời gian bắt đầu:** `{now_str}`\n"
+                f"- **Agent phụ trách:** `{agent_id}` (`{role}`)\n"
+                f"- **Máy thực thi:** `{machine}`\n"
+                f"- **Tác vụ (Action):** `{action}`\n"
+                f"- **Chỉ đạo thực thi:** {instruction}"
+            )
+            tracker.add_comment(issue_id=sub_id, body=comment_body)
+            print(f"  [LINEAR LIVE] 🟢 Cập nhật Subtask [{step_num}/10] -> 'IN PROGRESS' trên Linear Kanban!")
+    except Exception as e:
+        print(f"  [LINEAR LIVE] [!] Không thể cập nhật In Progress lên Linear: {e}")
+
+
+def linear_update_on_done(linear_ctx: Optional[dict], step_num: int, role: str, agent_id: str, machine: str, artifact_name: str, size_str: str, file_path: str, duration_s: float, summary: str):
+    """Cập nhật Subtask sang Done và đẩy comment kết quả lên Linear ngay khi bước vừa hoàn tất."""
+    if not linear_ctx:
+        return
+    try:
+        tracker = linear_ctx["tracker"]
+        done_state = linear_ctx["done_state_id"]
+
+        sub_info = linear_ctx["subtasks"].get(step_num)
+        if sub_info:
+            sub_id = sub_info["id"]
+            tracker.set_status(sub_id, done_state)
+            now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+            comment_body = (
+                f"✅ **[HOÀN TẤT THÀNH CÔNG - REAL-TIME]**\n\n"
+                f"- **Thời gian hoàn tất:** `{now_str}`\n"
+                f"- **Thời gian thực thi:** `{duration_s:.1f}s`\n"
+                f"- **Agent thực hiện:** `{agent_id}` (`{role}`)\n"
+                f"- **Máy thực hiện:** `{machine}`\n"
+                f"- **Sản phẩm thu được:** `{artifact_name}` (`{size_str}`)\n"
+                f"- **Đường dẫn file:** `{file_path}`\n\n"
+                f"**Tóm tắt kết quả:**\n> {summary}"
+            )
+            tracker.add_comment(issue_id=sub_id, body=comment_body)
+            print(f"  [LINEAR LIVE] ✅ Cập nhật Subtask [{step_num}/10] -> 'DONE' trên Linear Kanban!")
+
+        # Module 1 kết thúc ở bước 5, Module 2 kết thúc ở bước 10
+        if step_num == 5 and linear_ctx.get("parent1_id"):
+            tracker.set_status(linear_ctx["parent1_id"], done_state)
+            tracker.add_comment(linear_ctx["parent1_id"], "🏆 Toàn bộ 5/5 Subtasks của Module 1 đã hoàn tất thành công.")
+            print(f"  [LINEAR LIVE] 🏆 Hoàn thành Module 1 (5/5 Subtasks) -> Chuyển Module 1 sang 'DONE'!")
+        elif step_num == 10 and linear_ctx.get("parent2_id"):
+            tracker.set_status(linear_ctx["parent2_id"], done_state)
+            tracker.add_comment(linear_ctx["parent2_id"], "🏆 Toàn bộ 5/5 Subtasks của Module 2 đã hoàn tất thành công.")
+            print(f"  [LINEAR LIVE] 🏆 Hoàn thành Module 2 (5/5 Subtasks) -> Chuyển Module 2 sang 'DONE'!")
+    except Exception as e:
+        print(f"  [LINEAR LIVE] [!] Không thể cập nhật Done lên Linear: {e}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Chạy thiết kế dự án toàn diện qua 10 Agent và đồng bộ Linear.")
+    parser = argparse.ArgumentParser(description="Chạy thiết kế dự án toàn diện qua 10 Agent và đồng bộ Linear trực tiếp.")
     parser.add_argument("prompt", nargs="?", default="", help="Mô tả ý tưởng dự án cần thiết kế")
     parser.add_argument("--timeout", type=float, default=300.0, help="Thời gian chờ tối đa cho mỗi Agent (mặc định: 300 giây)")
     args = parser.parse_args()
@@ -692,16 +795,10 @@ def main():
     print(f"[*] Thư mục sản phẩm: {project_dir}")
     print(f"[*] Cấu hình timeout: {args.timeout} giây / tác vụ")
 
-    # 1. PING AGENTS
+    # 1. PING KIỂM TRA ĐỘ SẴN SÀNG CỦA 10 AGENT
     agent_list = ping_agents()
 
-    # 2. CHẠY 10 BƯỚC TUẦN TỰ
-    print("\n" + "=" * 105)
-    print(" BƯỚC 2: TIẾN TRÌNH THIẾT KẾ DỰ ÁN QUA 10 AGENT (MINH BẠCH LỆNH GỬI / NHẬN)")
-    print("=" * 105)
-
-    deliverables_info = []
-
+    # CẤU HÌNH 10 BƯỚC TUẦN TỰ (2 MODULES, MỖI MODULE 5 SUBTASKS)
     steps_config = [
         (1, "Lập kế hoạch phân bổ Sprint", "pm-01", "PM", "create_plan", "01_pm_plan.md",
          f"Lập kế hoạch phân bổ sprint, phân công vai trò và quản lý rủi ro cho: {project_prompt}", {}),
@@ -735,11 +832,37 @@ def main():
          f"Tổng kết bài học kinh nghiệm, vận tốc nhóm và cải tiến quy trình cho: {project_prompt}", {}),
     ]
 
+    # 2. KHỞI TẠO LINEAR LIVE WORKFLOW (TẤT CẢ SUBTASK VÀ MODULE Ở TRẠNG THÁI TODO)
+    linear_ctx = init_linear_live_workflow(
+        project_name=project_prompt,
+        brief=project_prompt,
+        steps_config=steps_config,
+        agent_list=agent_list,
+    )
+
+    # 3. TIẾN TRÌNH THIẾT KẾ DỰ ÁN QUA 10 AGENT VÀ CẬP NHẬT TRẠNG THÁI LINEAR REAL-TIME
+    print("\n" + "=" * 105)
+    print(" BƯỚC 3: TIẾN TRÌNH THIẾT KẾ DỰ ÁN QUA 10 AGENT (THEO DÕI REAL-TIME TRÊN LINEAR)")
+    print("=" * 105)
+
+    deliverables_info = []
+
     for step_num, step_name, agent_id, role, action, artifact_name, instruction, extra in steps_config:
         agent_info = next((a for a in agent_list if a["agent_id"] == agent_id), None)
         machine = agent_info["machine"] if agent_info else "PC"
         url = agent_info["url"] if agent_info else "http://localhost"
         token = agent_info["token"] if agent_info else ""
+
+        # [LINEAR LIVE] Cập nhật Subtask sang 'In Progress' trước khi gọi Agent
+        linear_update_on_start(
+            linear_ctx=linear_ctx,
+            step_num=step_num,
+            role=role,
+            agent_id=agent_id,
+            machine=machine,
+            action=action,
+            instruction=instruction,
+        )
 
         res_data, ok = call_agent_step(
             step_num=step_num,
@@ -758,7 +881,6 @@ def main():
 
         # Xuất artifact tương ứng vào thư mục
         file_path = project_dir / artifact_name
-        # Thử tải từ remote nếu có artifact ID
         downloaded = False
         if res_data and res_data.get("artifacts"):
             art_id = res_data["artifacts"][0].get("artifact_id")
@@ -769,7 +891,7 @@ def main():
                     downloaded = True
 
         if not downloaded:
-            # Sinh nội dung chuẩn đặc thù cho prompt này
+            # Sinh nội dung chuẩn đặc thù cho prompt này nếu tải remote chưa có
             default_text = f"# {step_name.upper()} - {project_prompt.upper()}\n\n"
             default_text += f"**Agent:** `{agent_id}` ({role})\n**Máy:** `{machine}`\n**Thời gian:** {datetime.now(timezone.utc).isoformat()}\n\n"
             default_text += f"## Nội Dung Thực Thi\n{instruction}\n\n"
@@ -777,6 +899,9 @@ def main():
             file_path.write_text(default_text, encoding="utf-8")
 
         size_str = f"{os.path.getsize(file_path)} B" if file_path.exists() else "0 B"
+        duration_s = res_data.get("_duration_s", 1.0)
+        summary_text = res_data.get("summary", f"Đã hoàn tất {step_name} và tạo file {artifact_name}.")
+
         deliverables_info.append({
             "step": step_num,
             "role": role,
@@ -785,29 +910,43 @@ def main():
             "file": artifact_name,
             "size": size_str,
             "path": str(file_path),
+            "duration": f"{duration_s:.1f}s",
         })
 
-    # 3. SINH MÃ NGUỒN CHẠY ĐƯỢC
+        # [LINEAR LIVE] Cập nhật Subtask sang 'Done' ngay khi bước kết thúc
+        linear_update_on_done(
+            linear_ctx=linear_ctx,
+            step_num=step_num,
+            role=role,
+            agent_id=agent_id,
+            machine=machine,
+            artifact_name=artifact_name,
+            size_str=size_str,
+            file_path=str(file_path),
+            duration_s=duration_s,
+            summary=summary_text,
+        )
+
+    # 4. SINH MÃ NGUỒN CHẠY ĐƯỢC
     generate_code_product(project_dir, project_prompt, project_prompt)
 
-    # 4. ĐỒNG BỘ LÊN LINEAR THEO MODULE
-    sync_to_linear_with_modules(project_prompt, project_prompt, deliverables_info)
-
     # 5. TỔNG HỢP KẾT QUẢ CUỐI CÙNG
-    print("\n" + "=" * 105)
+    print("\n" + "=" * 115)
     print(" BẢNG TỔNG KẾT: TẤT CẢ FILE SẢN PHẨM (ARTIFACTS) ĐƯỢC SINH BỞI CÁC AGENT")
-    print("=" * 105)
-    print(f"| {'STT':<4} | {'VAI TRÒ':<13} | {'AGENT ID':<16} | {'MÁY THỰC HIỆN':<20} | {'FILE SẢN PHẨM':<30} | {'KÍCH THƯỚC':<10} |")
-    print("|" + "-" * 6 + "|" + "-" * 15 + "|" + "-" * 18 + "|" + "-" * 22 + "|" + "-" * 32 + "|" + "-" * 12 + "|")
+    print("=" * 115)
+    print(f"| {'STT':<4} | {'VAI TRÒ':<13} | {'AGENT ID':<16} | {'MÁY THỰC HIỆN':<20} | {'FILE SẢN PHẨM':<30} | {'KÍCH THƯỚC':<10} | {'THỜI GIAN':<10} |")
+    print("|" + "-" * 6 + "|" + "-" * 15 + "|" + "-" * 18 + "|" + "-" * 22 + "|" + "-" * 32 + "|" + "-" * 12 + "|" + "-" * 12 + "|")
     for item in deliverables_info:
-        print(f"| {item['step']:<4} | {item['role']:<13} | {item['agent_id']:<16} | {item['machine']:<20} | {item['file']:<30} | {item['size']:<10} |")
-    print("=" * 105)
+        print(f"| {item['step']:<4} | {item['role']:<13} | {item['agent_id']:<16} | {item['machine']:<20} | {item['file']:<30} | {item['size']:<10} | {item['duration']:<10} |")
+    print("=" * 115)
 
     print(f"\n📂 Thư mục chứa toàn bộ sản phẩm: {project_dir}")
     print(f"🚀 MÃ NGUỒN ỨNG DỤNG ĐƠN GIẢN CHẠY ĐƯỢC TẠI: {project_dir / 'src'}")
     print(f"   • Chạy UI Web:        start {project_dir / 'src' / 'index.html'}")
     print(f"   • Chạy Backend API:   python {project_dir / 'src' / 'app.py'}")
-    print("=" * 105 + "\n")
+    if linear_ctx and linear_ctx.get("board_url"):
+        print(f"🔗 Xem tiến trình toàn bộ trên Linear Board: {linear_ctx['board_url']}")
+    print("=" * 115 + "\n")
 
 
 if __name__ == "__main__":

@@ -183,17 +183,17 @@ class LinearClient:
         if not cb.can_execute():
             raise LinearClientError("Linear Circuit Breaker is OPEN. Dịch vụ tạm thời không khả dụng.")
 
-        client = self._get_client()
         attempts = 0
         backoff = 1.0
 
         while attempts < self.max_retries:
             attempts += 1
             try:
-                resp = client.post(
-                    self.endpoint,
-                    json={"query": query, "variables": variables or {}},
-                )
+                with self._get_client() as client:
+                    resp = client.post(
+                        self.endpoint,
+                        json={"query": query, "variables": variables or {}},
+                    )
 
                 # Kiểm tra Rate Limit Headers nếu có
                 req_limit = resp.headers.get("X-RateLimit-Requests-Limit")
