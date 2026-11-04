@@ -782,15 +782,17 @@ def linear_update_on_done(linear_ctx: Optional[dict], step_num: int, role: str, 
             tracker.add_comment(issue_id=sub_id, body=comment_body)
             print(f"  [LINEAR LIVE] ✅ Cập nhật Subtask [{step_num}/10] -> 'DONE' trên Linear Kanban!")
 
-        # Module 1 kết thúc ở bước 5, Module 2 kết thúc ở bước 10
+        # Module 1 kết thúc ở bước 5, Module 2 kết thúc ở bước cuối
+        total_steps = len(linear_ctx.get("subtasks", {})) if linear_ctx.get("subtasks") else 11
         if step_num == 5 and linear_ctx.get("parent1_id"):
             tracker.set_status(linear_ctx["parent1_id"], done_state)
             tracker.add_comment(linear_ctx["parent1_id"], "🏆 Toàn bộ 5/5 Subtasks của Module 1 đã hoàn tất thành công.")
             print(f"  [LINEAR LIVE] 🏆 Hoàn thành Module 1 (5/5 Subtasks) -> Chuyển Module 1 sang 'DONE'!")
-        elif step_num == 10 and linear_ctx.get("parent2_id"):
+        elif step_num == total_steps and linear_ctx.get("parent2_id"):
             tracker.set_status(linear_ctx["parent2_id"], done_state)
-            tracker.add_comment(linear_ctx["parent2_id"], "🏆 Toàn bộ 5/5 Subtasks của Module 2 đã hoàn tất thành công.")
-            print(f"  [LINEAR LIVE] 🏆 Hoàn thành Module 2 (5/5 Subtasks) -> Chuyển Module 2 sang 'DONE'!")
+            mod2_count = total_steps - 5
+            tracker.add_comment(linear_ctx["parent2_id"], f"🏆 Toàn bộ {mod2_count} Subtasks của Module 2 đã hoàn tất thành công.")
+            print(f"  [LINEAR LIVE] 🏆 Hoàn thành Module 2 ({mod2_count} Subtasks) -> Chuyển Module 2 sang 'DONE'!")
     except Exception as e:
         print(f"  [LINEAR LIVE] [!] Không thể cập nhật Done lên Linear: {e}")
 
@@ -851,8 +853,9 @@ def main():
     # 1. PING KIỂM TRA ĐỘ SẴN SÀNG CỦA 10 AGENT
     agent_list = ping_agents()
 
-    # CẤU HÌNH 10 BƯỚC TUẦN TỰ (2 MODULES, MỖI MODULE 5 SUBTASKS)
+    # CẤU HÌNH 11 BƯỚC TUẦN TỰ (MODULE 1: 5 SUBTASKS, MODULE 2: 6 SUBTASKS CÓ VÒNG LẶP SỬA LỖI QA & SECURITY)
     steps_config = [
+        # --- MODULE 1: ĐẶC TẢ YÊU CẦU & THIẾT KẾ KIẾN TRÚC NỀN TẢNG ---
         (1, "Lập kế hoạch phân bổ Sprint", "pm-01", "PM", "create_plan", "01_pm_plan.md",
          f"Lập kế hoạch phân bổ sprint, phân công vai trò và quản lý rủi ro cho: {project_prompt}", {}),
         (2, "Xác định Product Backlog", "po-01", "PO", "manage_backlog", "02_po_backlog.md",
@@ -863,26 +866,70 @@ def main():
          f"Thiết kế kiến trúc Microservices 3 tầng cho: {project_prompt}", {}),
         (5, "Thiết kế Database Schema DDL", "dba-01", "DBA", "DESIGN_DATABASE", "05_dba_schema.sql",
          f"Thiết kế Schema CSDL đầy đủ bảng, khóa chính, khóa ngoại, indexes cho: {project_prompt}", {"requirements": project_prompt}),
-        (6, "Lập trình hiện thực hóa tính năng", "dev-01", "DEV", "fix_bugs", "06_dev_source.zip",
-         f"Lập trình module mã nguồn hoàn chỉnh với FastAPI cho: {project_prompt}", {"feature": slug}),
-        (7, "Xây dựng kịch bản kiểm thử", "tester-01", "TESTER", "create_test_cases", "07_tester_test_cases.json",
-         f"Sinh bộ kịch bản test cases tự động cho API của: {project_prompt}", {}),
-        (8, "Rà soát an toàn thông tin & lỗ hổng", "security-01", "SECURITY", "security_review", "08_security_report.md",
-         f"Rà soát lỗ hổng injection, JWT và an ninh mã nguồn cho: {project_prompt}", {
+
+        # --- MODULE 2: LẬP TRÌNH, KIỂM THỬ, QUÉT AN NINH, VÁ LỖI & TRIỂN KHAI ---
+        (6, "Lập trình mã nguồn ban đầu", "dev-01", "DEV", "fix_bugs", "06_dev_source.zip",
+         f"Lập trình module mã nguồn ban đầu với FastAPI cho: {project_prompt}", {"feature": slug}),
+        (7, "PM gửi code sang TESTER kiểm thử lỗi", "tester-01", "TESTER", "create_test_cases", "07_tester_test_report.json",
+         f"PM gửi mã nguồn sang TESTER: Thực hiện kiểm thử tự động, phát hiện các ca lỗi chức năng và biên cho: {project_prompt}", {
              "input_artifacts": [{
-                 "artifact_id": "ART-001",
+                 "artifact_id": "ART-DEV-001",
                  "name": "source.zip",
                  "type": "SOURCE_CODE",
                  "version": "1.0",
                  "uri": "artifacts/inbox/dev-01/source.zip",
                  "created_by": "dev-01",
-                 "created_at": "2026-11-04T07:25:39.622590Z"
+                 "created_at": datetime.now(timezone.utc).isoformat()
              }]
          }),
-        (9, "Đóng gói CI/CD & Deploy Staging", "devops-01", "DEVOPS", "deploy", "09_devops_deployment_report.md",
-         f"Đóng gói Dockerfile, docker-compose và triển khai Staging cho: {project_prompt}", {}),
-        (10, "Tổng kết Sprint Retrospective", "scrum_master-01", "SCRUM_MASTER", "run_retrospective", "10_scrum_retrospective.md",
-         f"Tổng kết bài học kinh nghiệm, vận tốc nhóm và cải tiến quy trình cho: {project_prompt}", {}),
+        (8, "PM gửi code sang SECURITY quét lỗ hổng", "security-01", "SECURITY", "security_review", "08_security_report.md",
+         f"PM gửi mã nguồn sang SECURITY: Rà soát an toàn thông tin, quét lỗ hổng SQLi, Command Injection, Hardcoded Secrets cho: {project_prompt}", {
+             "input_artifacts": [{
+                 "artifact_id": "ART-DEV-001",
+                 "name": "source.zip",
+                 "type": "SOURCE_CODE",
+                 "version": "1.0",
+                 "uri": "artifacts/inbox/dev-01/source.zip",
+                 "created_by": "dev-01",
+                 "created_at": datetime.now(timezone.utc).isoformat()
+             }]
+         }),
+        (9, "PM chuyển báo cáo & Chỉ đạo DEV sửa code", "dev-01", "DEV", "fix_bugs", "09_dev_fixed_source.zip",
+         f"PM chuyển giao báo cáo lỗi từ TESTER và SECURITY: Chỉ đạo DEV khắc phục triệt để lỗi kiểm thử, loại bỏ hardcoded secret, vá lỗi injection và hoàn thiện mã nguồn sạch.", {
+             "input_artifacts": [
+                 {
+                     "artifact_id": "ART-DEV-001",
+                     "name": "source.zip",
+                     "type": "SOURCE_CODE",
+                     "version": "1.0",
+                     "uri": "artifacts/inbox/dev-01/source.zip",
+                     "created_by": "dev-01",
+                     "created_at": datetime.now(timezone.utc).isoformat()
+                 },
+                 {
+                     "artifact_id": "ART-TEST-001",
+                     "name": "test_report.json",
+                     "type": "TEST_REPORT",
+                     "version": "1.0",
+                     "uri": "artifacts/inbox/tester-01/test-cases.json",
+                     "created_by": "tester-01",
+                     "created_at": datetime.now(timezone.utc).isoformat()
+                 },
+                 {
+                     "artifact_id": "ART-SEC-001",
+                     "name": "security_report.md",
+                     "type": "SECURITY_REPORT",
+                     "version": "1.0",
+                     "uri": "artifacts/inbox/security-01/security-report.md",
+                     "created_by": "security-01",
+                     "created_at": datetime.now(timezone.utc).isoformat()
+                 }
+             ]
+         }),
+        (10, "Đóng gói Docker & Triển khai Staging", "devops-01", "DEVOPS", "deploy", "10_devops_deployment_report.md",
+         f"Đóng gói Dockerfile, docker-compose và triển khai mã nguồn đã vá lỗi lên Staging cho: {project_prompt}", {}),
+        (11, "Tổng kết Sprint Retrospective & Nghiệm thu", "scrum_master-01", "SCRUM_MASTER", "run_retrospective", "11_scrum_retrospective.md",
+         f"Tổng kết bài học kinh nghiệm, vận tốc nhóm và đánh giá chất lượng sửa lỗi sau QA/Security cho: {project_prompt}", {}),
     ]
 
     # 2. KHỞI TẠO LINEAR LIVE WORKFLOW (TẤT CẢ SUBTASK VÀ MODULE Ở TRẠNG THÁI TODO)
