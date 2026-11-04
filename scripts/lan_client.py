@@ -90,18 +90,83 @@ def cmd_health(agent_target: str) -> int:
 
         url = f"{base_url}/health"
         try:
-            with httpx.Client(timeout=10.0) as client:
+            with httpx.Client(timeout=3.0) as client:
                 res = client.get(url)
                 if res.status_code == 200:
-                    print(f"[PASS] {aid} ({url}): {res.json()}")
+                    print(f"[PASS] {aid:16} ({url}): {res.json()}")
                 else:
-                    print(f"[FAIL] {aid} ({url}): HTTP {res.status_code} - {res.text}", file=sys.stderr)
+                    print(f"[FAIL] {aid:16} ({url}): HTTP {res.status_code} - {res.text}", file=sys.stderr)
                     has_error = True
         except Exception as e:
-            print(f"[FAIL] {aid} ({url}): Không thể kết nối ({e})", file=sys.stderr)
+            print(f"[FAIL] {aid:16} ({url}): Không thể kết nối ({e})", file=sys.stderr)
             has_error = True
 
     return 1 if has_error else 0
+
+
+def cmd_check_all() -> int:
+    """Kiểm tra toàn bộ 10 Agent: /health, độ trễ và xác thực Bearer token."""
+    import time
+    endpoints = load_endpoints()
+    print("=" * 95)
+    print(" BẢNG KIỂM TRA 10 AGENT TRÊN 5 MÁY (RADMIN VPN / LAN)")
+    print("=" * 95)
+    print(f"| {'AGENT ID':16} | {'ENDPOINT':32} | {'HEALTH':12} | {'LATENCY':8} | {'XÁC THỰC TOKEN':16} |")
+    print("|" + "-" * 18 + "|" + "-" * 34 + "|" + "-" * 14 + "|" + "-" * 10 + "|" + "-" * 18 + "|")
+
+    for aid, base_url in endpoints.items():
+        if not base_url:
+            continue
+        token = get_token_for_agent(aid)
+        url_health = f"{base_url}/health"
+
+        # 1. Health check
+        health_status = "UNKNOWN"
+        latency_str = "-"
+        is_online = False
+        try:
+            t0 = time.time()
+            with httpx.Client(timeout=3.0) as client:
+                res = client.get(url_health)
+                latency = int((time.time() - t0) * 1000)
+                latency_str = f"{latency} ms"
+                if res.status_code == 200:
+                    health_status = "ONLINE"
+                    is_online = True
+                else:
+                    health_status = f"HTTP {res.status_code}"
+        except Exception:
+            health_status = "OFFLINE"
+
+        # 2. Auth check
+        auth_status = "CHƯA BẬT"
+        if is_online:
+            headers = {"Authorization": f"Bearer {token}"} if token else {}
+            try:
+                with httpx.Client(timeout=3.0) as client:
+                    res_agent = client.get(f"{base_url}/agent", headers=headers)
+                    if res_agent.status_code == 200:
+                        auth_status = "PASS (200)"
+                    elif res_agent.status_code == 404:
+                        res_status = client.get(f"{base_url}/status", headers=headers)
+                        if res_status.status_code == 200:
+                            auth_status = "PASS (200)"
+                        elif res_status.status_code == 401:
+                            auth_status = "FAIL (401)"
+                        else:
+                            auth_status = f"HTTP {res_status.status_code}"
+                    elif res_agent.status_code == 401:
+                        auth_status = "FAIL (401)"
+                    else:
+                        auth_status = f"HTTP {res_agent.status_code}"
+            except Exception as e:
+                auth_status = "ERROR"
+
+        icon = "[+]" if health_status == "ONLINE" and "PASS" in auth_status else ("[-]" if health_status == "OFFLINE" else "[!]")
+        print(f"| {icon} {aid:12} | {base_url:32} | {health_status:12} | {latency_str:8} | {auth_status:16} |")
+
+    print("=" * 95)
+    return 0
 
 
 def cmd_task(agent_id: str, task_file_path: str) -> int:
@@ -251,6 +316,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Client HTTP kiểm thử Agent qua mạng LAN (Agent API v1)")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    # Subcommand: check
+    p_check = subparsers.add_parser("check", help="Kiểm tra toàn bộ 10 agent và bảng trạng thái xác thực token")
+
     # Subcommand: health
     p_health = subparsers.add_parser("health", help="Kiểm tra endpoint /health của agent")
     p_health.add_argument("agent_id", type=str, default="all", nargs="?", help="ID agent hoặc 'all'")
@@ -275,7 +343,9 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if args.command == "health":
+    if args.command == "check":
+        sys.exit(cmd_check_all())
+    elif args.command == "health":
         sys.exit(cmd_health(args.agent_id))
     elif args.command == "task":
         sys.exit(cmd_task(args.agent_id, args.task_file))
