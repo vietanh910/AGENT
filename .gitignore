@@ -67,3 +67,16 @@ data/results/
 artifacts/
 */artifacts/
 
+
+# Deploy staging stacks
+deploy/staging/
+
+
+control/data/
+worker/data/
+*.sqlite
+*.sqlite3
+*.db
+*.sql
+docs/process-report-*.md
+!docs/process-report-RUN-E2E-77A68D.md

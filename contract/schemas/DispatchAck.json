@@ -1,0 +1,31 @@
+{
+  "description": "Phản hồi xác nhận tiếp nhận việc từ Worker Host (HTTP 202).",
+  "properties": {
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "accepted": {
+      "title": "Accepted",
+      "type": "boolean"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reason"
+    }
+  },
+  "required": [
+    "task_id",
+    "accepted"
+  ],
+  "title": "DispatchAck",
+  "type": "object"
+}

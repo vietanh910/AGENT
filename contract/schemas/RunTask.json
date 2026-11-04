@@ -1,0 +1,395 @@
+{
+  "$defs": {
+    "AgentError": {
+      "description": "Cấu trúc mô tả lỗi tiêu chuẩn trả về từ Agent.",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "retryable": {
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "details": {
+          "additionalProperties": true,
+          "title": "Details",
+          "type": "object"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryable"
+      ],
+      "title": "AgentError",
+      "type": "object"
+    },
+    "AgentRole": {
+      "description": "Vai trò của Agent trong đội ngũ phát triển phần mềm.",
+      "enum": [
+        "PM",
+        "SA",
+        "BA",
+        "PO",
+        "DEV",
+        "TESTER",
+        "DEVOPS",
+        "DBA",
+        "SCRUM_MASTER",
+        "SECURITY"
+      ],
+      "title": "AgentRole",
+      "type": "string"
+    },
+    "ArtifactRef": {
+      "description": "Tham chiếu siêu dữ liệu tới một Artifact trong hệ thống.",
+      "properties": {
+        "artifact_id": {
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/ArtifactType"
+        },
+        "version": {
+          "default": "1.0",
+          "title": "Version",
+          "type": "string"
+        },
+        "uri": {
+          "title": "Uri",
+          "type": "string"
+        },
+        "created_by": {
+          "title": "Created By",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "checksum": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Checksum"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "name",
+        "type",
+        "uri",
+        "created_by",
+        "created_at"
+      ],
+      "title": "ArtifactRef",
+      "type": "object"
+    },
+    "ArtifactType": {
+      "description": "Loại Artifact được tạo hoặc chuyển giao giữa các Agent.",
+      "enum": [
+        "REQUIREMENT",
+        "USER_STORY",
+        "ARCHITECTURE",
+        "DATABASE_SCHEMA",
+        "SOURCE_CODE",
+        "TEST_CASE",
+        "TEST_REPORT",
+        "SECURITY_REPORT",
+        "DEPLOYMENT",
+        "DOCUMENTATION",
+        "PLAN",
+        "BACKLOG",
+        "OTHER"
+      ],
+      "title": "ArtifactType",
+      "type": "string"
+    },
+    "DispatchState": {
+      "description": "Trạng thái điều phối chi tiết của Task trong cơ sở dữ liệu PC1.",
+      "enum": [
+        "QUEUED",
+        "ASSIGNED",
+        "RUNNING",
+        "RETRY_WAIT",
+        "COMPLETED",
+        "FAILED",
+        "BLOCKED",
+        "CANCELLED"
+      ],
+      "title": "DispatchState",
+      "type": "string"
+    },
+    "ErrorCode": {
+      "description": "Mã định danh lỗi chuẩn trong hệ thống.",
+      "enum": [
+        "INVALID_INPUT",
+        "MISSING_CONTEXT",
+        "LLM_ERROR",
+        "TOOL_ERROR",
+        "TIMEOUT",
+        "PERMISSION_DENIED",
+        "ARTIFACT_ERROR",
+        "VALIDATION_ERROR",
+        "UNKNOWN_ERROR",
+        "WORKER_OFFLINE",
+        "DISPATCH_FAILED",
+        "LINEAR_ERROR",
+        "GITHUB_ERROR",
+        "APPROVAL_REQUIRED"
+      ],
+      "title": "ErrorCode",
+      "type": "string"
+    },
+    "NextAction": {
+      "description": "Hành động đề xuất tiếp theo (gợi ý cho Orchestrator, không gọi trực tiếp).",
+      "properties": {
+        "suggested_role": {
+          "$ref": "#/$defs/AgentRole"
+        },
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "suggested_role",
+        "action",
+        "reason"
+      ],
+      "title": "NextAction",
+      "type": "object"
+    },
+    "TaskResult": {
+      "description": "Kết quả thực thi tác vụ trả về từ Agent.",
+      "properties": {
+        "contract_version": {
+          "default": "1.3.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        },
+        "agent_id": {
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/TaskStatus"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        },
+        "outputs": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Outputs",
+          "type": "array"
+        },
+        "artifacts": {
+          "items": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "title": "Artifacts",
+          "type": "array"
+        },
+        "next_actions": {
+          "items": {
+            "$ref": "#/$defs/NextAction"
+          },
+          "title": "Next Actions",
+          "type": "array"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        }
+      },
+      "required": [
+        "task_id",
+        "agent_id",
+        "status",
+        "summary"
+      ],
+      "title": "TaskResult",
+      "type": "object"
+    },
+    "TaskStatus": {
+      "description": "Trạng thái thực thi của Task.",
+      "enum": [
+        "PENDING",
+        "RUNNING",
+        "COMPLETED",
+        "FAILED",
+        "BLOCKED",
+        "CANCELLED"
+      ],
+      "title": "TaskStatus",
+      "type": "string"
+    }
+  },
+  "description": "Thực thể RunTask thuộc WorkflowRun lưu trong cơ sở dữ liệu Control Node.",
+  "properties": {
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "agent_id": {
+      "title": "Agent Id",
+      "type": "string"
+    },
+    "role": {
+      "$ref": "#/$defs/AgentRole"
+    },
+    "action": {
+      "title": "Action",
+      "type": "string"
+    },
+    "instruction": {
+      "title": "Instruction",
+      "type": "string"
+    },
+    "context": {
+      "additionalProperties": true,
+      "title": "Context",
+      "type": "object"
+    },
+    "dispatch_state": {
+      "$ref": "#/$defs/DispatchState",
+      "default": "QUEUED"
+    },
+    "attempts": {
+      "default": 0,
+      "title": "Attempts",
+      "type": "integer"
+    },
+    "max_attempts": {
+      "default": 3,
+      "title": "Max Attempts",
+      "type": "integer"
+    },
+    "timeout_seconds": {
+      "default": 300,
+      "title": "Timeout Seconds",
+      "type": "integer"
+    },
+    "deadline": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Deadline"
+    },
+    "result": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TaskResult"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "error": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AgentError"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "linear_issue_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Linear Issue Id"
+    },
+    "version": {
+      "default": 1,
+      "title": "Version",
+      "type": "integer"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task_id",
+    "run_id",
+    "agent_id",
+    "role",
+    "action",
+    "instruction"
+  ],
+  "title": "RunTask",
+  "type": "object"
+}

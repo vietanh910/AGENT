@@ -1,0 +1,65 @@
+{
+  "$defs": {
+    "FindingSeverity": {
+      "description": "Mức độ nghiêm trọng của vấn đề / lỗi phát hiện.",
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ],
+      "title": "FindingSeverity",
+      "type": "string"
+    },
+    "VerdictFinding": {
+      "description": "Chi tiết từng phát hiện trong báo cáo phán quyết.",
+      "properties": {
+        "severity": {
+          "$ref": "#/$defs/FindingSeverity"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "detail": {
+          "title": "Detail",
+          "type": "string"
+        }
+      },
+      "required": [
+        "severity",
+        "title",
+        "detail"
+      ],
+      "title": "VerdictFinding",
+      "type": "object"
+    },
+    "VerdictStatus": {
+      "description": "Trạng thái phán quyết nghiệm thu / kiểm thử.",
+      "enum": [
+        "PASS",
+        "FAIL"
+      ],
+      "title": "VerdictStatus",
+      "type": "string"
+    }
+  },
+  "description": "Cấu trúc Verdict chuẩn bắt buộc trong outputs[0] của TESTER, SECURITY và PO.",
+  "properties": {
+    "verdict": {
+      "$ref": "#/$defs/VerdictStatus"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/VerdictFinding"
+      },
+      "title": "Findings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "verdict"
+  ],
+  "title": "Verdict",
+  "type": "object"
+}

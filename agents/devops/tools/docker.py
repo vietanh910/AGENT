@@ -1,4 +1,7 @@
-from tools.terminal import ExecutionResult, TerminalExecutor
+try:
+    from agents.devops.tools.terminal import ExecutionResult, TerminalExecutor
+except ImportError:
+    from tools.terminal import ExecutionResult, TerminalExecutor
 
 
 def docker_build(

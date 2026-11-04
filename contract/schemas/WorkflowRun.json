@@ -1,0 +1,102 @@
+{
+  "$defs": {
+    "RunStatus": {
+      "description": "Trạng thái vòng đời của một WorkflowRun trong Control Node.",
+      "enum": [
+        "CREATED",
+        "PLANNING",
+        "AWAITING_APPROVAL",
+        "RUNNING",
+        "BLOCKED",
+        "COMPLETED",
+        "FAILED",
+        "CANCELLED"
+      ],
+      "title": "RunStatus",
+      "type": "string"
+    }
+  },
+  "description": "Thực thể WorkflowRun lưu trữ trong cơ sở dữ liệu Control Node.",
+  "properties": {
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "project_id": {
+      "title": "Project Id",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/RunStatus",
+      "default": "CREATED"
+    },
+    "brief": {
+      "title": "Brief",
+      "type": "string"
+    },
+    "plan": {
+      "additionalProperties": true,
+      "title": "Plan",
+      "type": "object"
+    },
+    "current_stage": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Current Stage"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "completed_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Completed At"
+    },
+    "linear_project_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Linear Project Id"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    }
+  },
+  "required": [
+    "run_id",
+    "project_id",
+    "brief"
+  ],
+  "title": "WorkflowRun",
+  "type": "object"
+}

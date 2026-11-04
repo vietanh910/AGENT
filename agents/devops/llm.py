@@ -5,7 +5,10 @@ from typing import Any, Callable, TypeVar
 from openai import OpenAI
 from pydantic import BaseModel, ValidationError
 
-from config import DevOpsConfig
+try:
+    from agents.devops.config import DevOpsConfig
+except ImportError:
+    from config import DevOpsConfig
 
 T = TypeVar("T", bound=BaseModel)
 

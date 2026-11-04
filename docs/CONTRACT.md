@@ -11,14 +11,14 @@
 | `TaskStatus` | `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, `BLOCKED`, `CANCELLED` |
 | `Priority` | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` |
 | `ArtifactType` | `REQUIREMENT`, `USER_STORY`, `ARCHITECTURE`, `DATABASE_SCHEMA`, `SOURCE_CODE`, `TEST_CASE`, `TEST_REPORT`, `SECURITY_REPORT`, `DEPLOYMENT`, `DOCUMENTATION`, `PLAN`, `BACKLOG`, `OTHER` |
-| `ErrorCode` | `INVALID_INPUT`, `MISSING_CONTEXT`, `LLM_ERROR`, `TOOL_ERROR`, `TIMEOUT`, `PERMISSION_DENIED`, `ARTIFACT_ERROR`, `VALIDATION_ERROR`, `UNKNOWN_ERROR` |
+| `ErrorCode` | `INVALID_INPUT`, `MISSING_CONTEXT`, `LLM_ERROR`, `TOOL_ERROR`, `TIMEOUT`, `PERMISSION_DENIED`, `ARTIFACT_ERROR`, `VALIDATION_ERROR`, `UNKNOWN_ERROR`, `WORKER_OFFLINE`, `DISPATCH_FAILED`, `LINEAR_ERROR`, `GITHUB_ERROR`, `APPROVAL_REQUIRED` |
 
 Ghi chú: `PLAN`, `BACKLOG`, `OTHER` là phần bổ sung so với danh sách gốc, vì PM và PO cần xuất kế hoạch và backlog.
 
 ## 2.2 Các model
 
 ```python
-CONTRACT_VERSION = "1.1.0"
+CONTRACT_VERSION = "1.3.0"
 
 class AgentIdentity(BaseModel):          # Agent tự khai báo
     contract_version: str = CONTRACT_VERSION
@@ -45,6 +45,7 @@ class ArtifactRef(BaseModel):
     created_by: str                       # agent_id
     created_at: datetime
     checksum: str | None = None           # sha256, để phát hiện file bị sửa
+    metadata: dict = {}                   # commit_sha, pr_number, branch, verdict...
 
 class Constraints(BaseModel):
     deadline: datetime | None = None
@@ -264,13 +265,14 @@ Bảng endpoint tiêu chuẩn:
 | BA | `write_user_stories` | `user_story` | `USER_STORY` | `REQUIREMENT` |
 | SA | `design_architecture` | `system_architecture` | `ARCHITECTURE` | `REQUIREMENT`, `USER_STORY` |
 | DBA | `design_schema` | `schema_design` | `DATABASE_SCHEMA` | `ARCHITECTURE`, `REQUIREMENT` |
-| DEV | `implement_project` | `coding` | `SOURCE_CODE` (.zip) | `ARCHITECTURE`, `DATABASE_SCHEMA`, `USER_STORY` |
+| DEV | `implement_project`, `implement_feature` | `coding` | `SOURCE_CODE` (.zip) | `ARCHITECTURE`, `DATABASE_SCHEMA`, `USER_STORY` |
 | DEV | `fix_bugs` | `bug_fixing` | `SOURCE_CODE` (.zip) | `SOURCE_CODE`, `TEST_REPORT` hoặc `SECURITY_REPORT` |
 | TESTER | `create_test_cases` | `test_case_generation` | `TEST_CASE` | `USER_STORY` |
 | TESTER | `run_test_suite` | `automated_testing` | `TEST_REPORT` (verdict) | `SOURCE_CODE`, `TEST_CASE` |
 | SECURITY | `security_review` | `security_review` | `SECURITY_REPORT` (verdict) | `SOURCE_CODE`, `ARCHITECTURE` |
 | DEVOPS | `generate_ci_config`, `build_image`, `deploy`, `health_check` | như mục 2.3 | `DEPLOYMENT` | `SOURCE_CODE` |
 | SCRUM_MASTER | `track_blockers` | `blocker_tracking` | `DOCUMENTATION` | nhật ký sự kiện dự án |
+| SCRUM_MASTER | `run_sprint_review` | `sprint_management` | `DOCUMENTATION` | nhật ký sự kiện sprint |
 | SCRUM_MASTER | `run_retrospective` | `retrospective` | `DOCUMENTATION` | nhật ký sự kiện dự án |
 
 **Quy ước verdict:**
@@ -290,6 +292,54 @@ Bảng endpoint tiêu chuẩn:
 PM chỉ đọc `verdict` và `severity`, không đọc văn bản tự do để đưa ra quyết định chuyển tiếp hay kích hoạt vòng sửa lỗi.
 
 **Quy ước SOURCE_CODE:**
-Mã nguồn được chuyển giao giữa các máy độc lập dưới dạng một file nén `.zip` (artifact `SOURCE_CODE`), hoàn toàn không phụ thuộc thư mục dùng chung giữa các máy.
+Mã nguồn được chuyển giao giữa các máy độc lập dưới dạng một file nén `.zip` (artifact `SOURCE_CODE`), hoặc thông qua Pull Request GitHub (`github://owner/repo/pull/<n>`).
+
+## 2.10 Mở rộng System Phase (Contract v1.2.0)
+
+### Các System Model (system_models.py)
+- `WorkerRegistration`: Đăng ký Worker Host (`worker_id`, `machine_id`, `base_url`, `agents`, `contract_version`, `worker_version`).
+- `Heartbeat`: Nhịp tim báo cáo trạng thái Worker (`worker_id`, `agents: list[{agent_id, status, current_task}]`, `running_tasks`, `sent_at`).
+- `DispatchRequest`: Giao task bất đồng bộ từ PC1 tới Worker (`TaskRequest` + `callback_url`, `attempt`).
+- `DispatchAck`: Phản hồi 202 Accepted từ Worker (`task_id`, `accepted`, `reason`).
+- `RunStatus`: Trạng thái vòng đời chạy workflow (`CREATED`, `PLANNING`, `AWAITING_APPROVAL`, `RUNNING`, `BLOCKED`, `COMPLETED`, `FAILED`, `CANCELLED`).
+- `DispatchState`: Trạng thái điều phối task (`QUEUED`, `ASSIGNED`, `RUNNING`, `RETRY_WAIT`, `COMPLETED`, `FAILED`, `BLOCKED`, `CANCELLED`).
+- `WorkflowRun`: Thực thể tiến trình chạy toàn bộ vòng đời phân phối phần mềm.
+- `RunTask`: Thực thể nhiệm vụ trong một run, lưu trữ trạng thái dispatch, version khóa lạc quan.
+- `Approval`: Quản lý phê duyệt tại các cổng duyệt (`gate`, `status`, `decided_by`, `decided_at`).
+- `AuditEvent`: Nhật ký kiểm toán ghi nhận toàn bộ thao tác hệ thống và gọi adapter.
+- `SystemEventType`: Các loại sự kiện hệ thống (`WORKER_ONLINE`, `WORKER_OFFLINE`, `TASK_DISPATCHED`, `TASK_STARTED`, `TASK_COMPLETED`, `TASK_FAILED`, `TASK_BLOCKED`, `APPROVAL_REQUESTED`, `APPROVAL_DECIDED`, `RUN_STARTED`, `RUN_COMPLETED`, `RUN_FAILED`).
+
+### Ánh xạ trạng thái điều phối (DISPATCH_TO_TASK_STATUS)
+
+| `dispatch_state` (DB Control Node) | `TaskStatus` (Contract) |
+| --- | --- |
+| `QUEUED`, `ASSIGNED`, `RETRY_WAIT` | `PENDING` |
+| `RUNNING` | `RUNNING` |
+| `COMPLETED` | `COMPLETED` |
+| `FAILED` | `FAILED` |
+| `BLOCKED` | `BLOCKED` |
+| `CANCELLED` | `CANCELLED` |
+
+### Mở rộng URI Artifact (ArtifactRef.uri)
+Bên cạnh đường dẫn tương đối an toàn (không tuyệt đối, không chứa `..`), cho phép đúng 3 dạng URI định danh:
+1. `github://owner/repo/pull/<n>` (Pull Request)
+2. `github://owner/repo/commit/<sha>` (Commit SHA)
+3. `artifact://<id>` (Artifact ID trong Artifact Store trên PC1)
+
+### Bảng phân bổ 10 Agent mặc định (AGENT_REGISTRY_DEFAULT)
+
+| agent_id | role | Máy | Runner |
+| --- | --- | --- | --- |
+| `pm-01` | PM | PC1 | LocalWorker |
+| `devops-01` | DEVOPS | PC1 | LocalWorker |
+| `sa-01` | SA | PC2 | Worker Host |
+| `dba-01` | DBA | PC2 | Worker Host |
+| `ba-01` | BA | PC3 | Worker Host |
+| `po-01` | PO | PC3 | Worker Host |
+| `dev-01` | DEV | PC4 | Worker Host |
+| `tester-01` | TESTER | PC4 | Worker Host |
+| `scrum_master-01` | SCRUM_MASTER | PC5 | Worker Host |
+| `security-01` | SECURITY | PC5 | Worker Host |
+
 
 

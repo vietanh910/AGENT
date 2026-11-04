@@ -16,11 +16,13 @@ from typing import Any
 from unittest.mock import patch
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-if str(ROOT_DIR / "tools") not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR / "tools"))
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 pm_dir = ROOT_DIR / "agents" / "pm"
 if str(pm_dir) not in sys.path:
     sys.path.insert(0, str(pm_dir))
+if str(ROOT_DIR / "tools") not in sys.path:
+    sys.path.append(str(ROOT_DIR / "tools"))
 
 import pytest
 

@@ -1,0 +1,79 @@
+{
+  "$defs": {
+    "AgentStatus": {
+      "description": "Trạng thái hoạt động của Agent.",
+      "enum": [
+        "OFFLINE",
+        "IDLE",
+        "RUNNING",
+        "WAITING",
+        "COMPLETED",
+        "FAILED",
+        "BLOCKED"
+      ],
+      "title": "AgentStatus",
+      "type": "string"
+    },
+    "HeartbeatAgentStatus": {
+      "description": "Trạng thái từng agent trong bản tin Heartbeat.",
+      "properties": {
+        "agent_id": {
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/AgentStatus"
+        },
+        "current_task": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Current Task"
+        }
+      },
+      "required": [
+        "agent_id",
+        "status"
+      ],
+      "title": "HeartbeatAgentStatus",
+      "type": "object"
+    }
+  },
+  "description": "Bản tin nhịp tim định kỳ (10s) của Worker Host gửi về PC1.",
+  "properties": {
+    "worker_id": {
+      "title": "Worker Id",
+      "type": "string"
+    },
+    "agents": {
+      "items": {
+        "$ref": "#/$defs/HeartbeatAgentStatus"
+      },
+      "title": "Agents",
+      "type": "array"
+    },
+    "running_tasks": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Running Tasks",
+      "type": "array"
+    },
+    "sent_at": {
+      "format": "date-time",
+      "title": "Sent At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "worker_id"
+  ],
+  "title": "Heartbeat",
+  "type": "object"
+}

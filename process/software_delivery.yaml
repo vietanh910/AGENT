@@ -1,0 +1,332 @@
+# =============================================================================
+# Software Delivery Workflow Definition (process/software_delivery.yaml)
+# Khung quy trình bắt buộc chuyển giao phần mềm cho hệ thống ai-team (Prompt S8)
+# =============================================================================
+
+version: "2.0"
+name: "software_delivery"
+description: "Khung quy trình phát triển và chuyển giao phần mềm chuẩn mực qua 10 AI Agent và các Gate kiểm soát"
+
+# Các Epic / Giai đoạn phân nhóm công việc
+epics:
+  - id: "scoping"
+    name: "Phân tích yêu cầu và xác lập phạm vi"
+    description: "Khảo sát brief, tạo backlog, viết đặc tả SRS và tách user stories"
+  - id: "design"
+    name: "Thiết kế hệ thống và cơ sở dữ liệu"
+    description: "Thiết kế kiến trúc hệ thống tổng thể và lược đồ quan hệ CSDL"
+  - id: "foundation"
+    name: "Khởi tạo khung dự án và kiểm thử"
+    description: "Xây dựng bộ test case kiểm thử và lập trình skeleton mã nguồn ban đầu"
+  - id: "feature_development"
+    name: "Phát triển tính năng theo Sprint"
+    description: "Phần động sinh từ User Stories: DEV lập trình, TESTER kiểm thử, SCRUM_MASTER review"
+  - id: "verification"
+    name: "Kiểm định bảo mật và đánh giá an toàn"
+    description: "Quét lỗ hổng tĩnh (SAST), dependency scan và đánh giá tuân thủ an toàn"
+  - id: "staging_deployment"
+    name: "Đóng gói CI/CD và Triển khai Staging"
+    description: "Sinh cấu hình CI/CD, đóng gói Docker image, deploy Staging và kiểm tra health check"
+  - id: "closure"
+    name: "Nghiệm thu, hồi tưởng và báo cáo"
+    description: "PO nghiệm thu bản phát hành, Scrum Master tổ chức retro, PM báo cáo trạng thái"
+
+# Thứ tự các bước bắt buộc trong khung quy trình
+tasks:
+  # 1. po.define_backlog
+  - id: "po_define_backlog"
+    epic: "scoping"
+    role: "PO"
+    action: "define_backlog"
+    title: "Định nghĩa Backlog dự án từ yêu cầu"
+    instruction: "Phân tích yêu cầu tổng quan từ người dùng, xác định mục tiêu và danh sách các hạng mục backlog chính"
+    depends_on: []
+    input_artifact_types: []
+    output_artifact_type: "BACKLOG"
+    priority: 1
+    max_attempts: 3
+    timeout_seconds: 300
+    acceptance_criteria_template:
+      - "Xác định rõ ràng mục tiêu cốt lõi của sản phẩm phần mềm"
+      - "Liệt kê danh sách các tính năng chính kèm mức độ ưu tiên (Must/Should/Could)"
+      - "Xuất artifact BACKLOG hợp lệ theo Agent Contract v1.3.0"
+
+  # 2. ba.write_requirements
+  - id: "ba_write_requirements"
+    epic: "scoping"
+    role: "BA"
+    action: "write_requirements"
+    title: "Viết tài liệu đặc tả yêu cầu phần mềm (SRS)"
+    instruction: "Chuyển hóa backlog thành tài liệu đặc tả yêu cầu chức năng và phi chức năng chi tiết"
+    depends_on: ["po_define_backlog"]
+    input_artifact_types: ["BACKLOG"]
+    output_artifact_type: "REQUIREMENT"
+    priority: 1
+    max_attempts: 3
+    timeout_seconds: 300
+    acceptance_criteria_template:
+      - "Đầy đủ các yêu cầu chức năng (FR) và phi chức năng (NFR)"
+      - "Nêu rõ các ràng buộc kỹ thuật, giả định và phạm vi ranh giới"
+      - "Xuất artifact REQUIREMENT với định dạng markdown rõ ràng"
+
+  # 3. ba.write_user_stories
+  - id: "ba_write_user_stories"
+    epic: "scoping"
+    role: "BA"
+    action: "write_user_stories"
+    title: "Tách danh sách User Stories chi tiết"
+    instruction: "Tách tài liệu SRS thành danh sách các User Story có cấu trúc chuẩn kèm tiêu chí chấp nhận"
+    depends_on: ["ba_write_requirements"]
+    input_artifact_types: ["REQUIREMENT"]
+    output_artifact_type: "USER_STORY"
+    priority: 1
+    max_attempts: 3
+    timeout_seconds: 300
+    acceptance_criteria_template:
+      - "Mỗi user story có id (US-xx), title, định dạng As a / I want / So that"
+      - "Kèm theo Acceptance Criteria rõ ràng và có thể kiểm thử độc lập"
+      - "Xuất artifact USER_STORY chứa dữ liệu JSON có cấu trúc"
+
+  # 4. GATE approve_scope
+  - id: "gate_approve_scope"
+    epic: "scoping"
+    role: "GATE"
+    action: "approve_scope"
+    title: "Cổng phê duyệt phạm vi và yêu cầu (Gate: approve_scope)"
+    instruction: "Dừng pipeline chờ người dùng hoặc người có thẩm quyền phê duyệt phạm vi và danh sách user story"
+    depends_on: ["ba_write_user_stories"]
+    input_artifact_types: ["USER_STORY", "REQUIREMENT"]
+    output_artifact_type: null
+    priority: 1
+    max_attempts: 1
+    timeout_seconds: 86400
+    acceptance_criteria_template:
+      - "Được phê duyệt hợp lệ qua API, giao diện Linear hoặc token ADMIN"
+
+  # 5. sa.design_architecture
+  - id: "sa_design_architecture"
+    epic: "design"
+    role: "SA"
+    action: "design_architecture"
+    title: "Thiết kế kiến trúc hệ thống tổng thể"
+    instruction: "Thiết kế kiến trúc ứng dụng, module, luồng xử lý và giao tiếp giữa các thành phần"
+    depends_on: ["gate_approve_scope"]
+    input_artifact_types: ["REQUIREMENT", "USER_STORY"]
+    output_artifact_type: "ARCHITECTURE"
+    priority: 2
+    max_attempts: 3
+    timeout_seconds: 300
+    acceptance_criteria_template:
+      - "Sơ đồ kiến trúc thành phần (Frontend, Backend, DB, Network)"
+      - "Quy chuẩn công nghệ, thư viện, mô hình bảo mật và mở rộng"
+      - "Xuất artifact ARCHITECTURE đạt chuẩn"
+
+  # 6. dba.design_schema
+  - id: "dba_design_schema"
+    epic: "design"
+    role: "DBA"
+    action: "design_schema"
+    title: "Thiết kế lược đồ cơ sở dữ liệu quan hệ"
+    instruction: "Thiết kế cấu trúc bảng, trường, khóa chính, khóa ngoại và chỉ mục cơ sở dữ liệu"
+    depends_on: ["sa_design_architecture"]
+    input_artifact_types: ["ARCHITECTURE", "REQUIREMENT"]
+    output_artifact_type: "DATABASE_SCHEMA"
+    priority: 2
+    max_attempts: 3
+    timeout_seconds: 300
+    acceptance_criteria_template:
+      - "Lược đồ cơ sở dữ liệu chuẩn hóa (ít nhất 3NF)"
+      - "Đầy đủ DDL SQL tạo bảng và chỉ mục tối ưu truy vấn"
+      - "Xuất artifact DATABASE_SCHEMA"
+
+  # 7. tester.create_test_cases
+  - id: "tester_create_test_cases"
+    epic: "foundation"
+    role: "TESTER"
+    action: "create_test_cases"
+    title: "Xây dựng bộ kịch bản kiểm thử (Test Cases)"
+    instruction: "Thiết kế các test cases bao phủ toàn bộ các User Story và kiến trúc hệ thống"
+    depends_on: ["sa_design_architecture", "dba_design_schema"]
+    input_artifact_types: ["ARCHITECTURE", "USER_STORY", "DATABASE_SCHEMA"]
+    output_artifact_type: "TEST_CASE"
+    priority: 2
+    max_attempts: 3
+    timeout_seconds: 300
+    acceptance_criteria_template:
+      - "Bao phủ 100% các Acceptance Criteria của User Stories"
+      - "Có các ca kiểm thử tích cực (happy path) và tiêu cực (edge cases)"
+      - "Xuất artifact TEST_CASE"
+
+  # 8. dev.implement_project
+  - id: "dev_implement_project"
+    epic: "foundation"
+    role: "DEV"
+    action: "implement_project"
+    title: "Khởi tạo bộ khung dự án và cấu hình CI cơ bản"
+    instruction: "Thiết lập cấu trúc mã nguồn, boilerplate, cấu hình kiểm thử ban đầu trên Git repository"
+    depends_on: ["tester_create_test_cases"]
+    input_artifact_types: ["ARCHITECTURE", "DATABASE_SCHEMA", "TEST_CASE"]
+    output_artifact_type: "SOURCE_CODE"
+    priority: 2
+    max_attempts: 3
+    timeout_seconds: 600
+    acceptance_criteria_template:
+      - "Khởi tạo thành công git branch và commit bộ khung dự án"
+      - "Bộ khung có thể chạy kiểm thử ban đầu mà không gặp lỗi syntax"
+      - "Xuất artifact SOURCE_CODE trỏ tới Git commit / PR"
+
+  # [Phần động cho từng User Story: dev.implement_feature, tester.run_test_suite, scrum_master.run_sprint_review]
+
+  # 9. security.security_review
+  - id: "security_security_review"
+    epic: "verification"
+    role: "SECURITY"
+    action: "security_review"
+    title: "Đánh giá an toàn và quét lỗ hổng bảo mật"
+    instruction: "Thực hiện quét bảo mật SAST, dependency auditing và kiểm tra các lỗ hổng OWASP Top 10"
+    depends_on: ["dev_implement_project"]
+    input_artifact_types: ["SOURCE_CODE", "ARCHITECTURE"]
+    output_artifact_type: "SECURITY_REPORT"
+    priority: 2
+    max_attempts: 3
+    timeout_seconds: 300
+    acceptance_criteria_template:
+      - "Không chứa lỗ hổng bảo mật mức độ CRITICAL hoặc HIGH chưa được xử lý"
+      - "Báo cáo rõ các điểm phát hiện và khuyến nghị khắc phục"
+      - "Xuất artifact SECURITY_REPORT với Verdict PASS"
+
+  # 10. devops.generate_ci_config
+  - id: "devops_generate_ci_config"
+    epic: "staging_deployment"
+    role: "DEVOPS"
+    action: "generate_ci_config"
+    title: "Tạo cấu hình CI/CD và Dockerfile"
+    instruction: "Tạo Dockerfile tối ưu và workflow pipeline tự động hóa CI/CD"
+    depends_on: ["security_security_review"]
+    input_artifact_types: ["SOURCE_CODE"]
+    output_artifact_type: "DEPLOYMENT"
+    priority: 3
+    max_attempts: 3
+    timeout_seconds: 300
+    acceptance_criteria_template:
+      - "Dockerfile đa tầng (multi-stage) tối ưu kích thước image"
+      - "Cấu hình build CI không chứa bí mật"
+      - "Xuất artifact DEPLOYMENT"
+
+  # 11. devops.build_image
+  - id: "devops_build_image"
+    epic: "staging_deployment"
+    role: "DEVOPS"
+    action: "build_image"
+    title: "Đóng gói Container Image"
+    instruction: "Thực thi build Docker container image từ commit mã nguồn đã được kiểm định"
+    depends_on: ["devops_generate_ci_config"]
+    input_artifact_types: ["SOURCE_CODE", "DEPLOYMENT"]
+    output_artifact_type: "DEPLOYMENT"
+    priority: 3
+    max_attempts: 3
+    timeout_seconds: 600
+    acceptance_criteria_template:
+      - "Build container image thành công với exit code 0"
+      - "Ghi nhận tag image và digest định danh"
+
+  # 12. devops.deploy (staging)
+  - id: "devops_deploy"
+    epic: "staging_deployment"
+    role: "DEVOPS"
+    action: "deploy"
+    title: "Triển khai ứng dụng lên môi trường Staging"
+    instruction: "Khởi chạy container stack trên môi trường Staging cách ly với cổng độc lập"
+    depends_on: ["devops_build_image"]
+    input_artifact_types: ["DEPLOYMENT"]
+    output_artifact_type: "DEPLOYMENT"
+    priority: 3
+    max_attempts: 3
+    timeout_seconds: 600
+    acceptance_criteria_template:
+      - "Container stack khởi động thành công và bind đúng cổng nội bộ"
+      - "File môi trường staging được cấp phát an toàn"
+
+  # 13. devops.health_check
+  - id: "devops_health_check"
+    epic: "staging_deployment"
+    role: "DEVOPS"
+    action: "health_check"
+    title: "Kiểm tra sức khỏe dịch vụ Staging (Health Check)"
+    instruction: "Gọi HTTP health check tới endpoint của dịch vụ Staging để đảm bảo hệ thống sẵn sàng"
+    depends_on: ["devops_deploy"]
+    input_artifact_types: ["DEPLOYMENT"]
+    output_artifact_type: "DEPLOYMENT"
+    priority: 3
+    max_attempts: 3
+    timeout_seconds: 180
+    acceptance_criteria_template:
+      - "Endpoint HTTP trả về mã trạng thái 200 OK"
+      - "Dịch vụ phản hồi trong thời gian cho phép (< 2000ms)"
+
+  # 14. GATE approve_prod
+  - id: "gate_approve_prod"
+    epic: "closure"
+    role: "GATE"
+    action: "approve_prod"
+    title: "Cổng phê duyệt phát hành Production (Gate: approve_prod)"
+    instruction: "Cổng kiểm soát an toàn trước khi triển khai Production (chỉ kích hoạt khi ALLOW_PROD_DEPLOY=true)"
+    depends_on: ["devops_health_check"]
+    input_artifact_types: ["DEPLOYMENT", "TEST_REPORT", "SECURITY_REPORT"]
+    output_artifact_type: null
+    priority: 1
+    max_attempts: 1
+    timeout_seconds: 86400
+    acceptance_criteria_template:
+      - "Được phê duyệt rõ ràng từ người dùng có quyền quản trị trước khi lên Prod"
+
+  # 15. po.accept_release
+  - id: "po_accept_release"
+    epic: "closure"
+    role: "PO"
+    action: "accept_release"
+    title: "Nghiệm thu bản phát hành phần mềm"
+    instruction: "Product Owner đánh giá toàn diện sản phẩm trên Staging và nghiệm thu bàn giao"
+    depends_on: ["gate_approve_prod"]
+    input_artifact_types: ["DEPLOYMENT", "TEST_REPORT"]
+    output_artifact_type: "DOCUMENTATION"
+    priority: 4
+    max_attempts: 3
+    timeout_seconds: 300
+    acceptance_criteria_template:
+      - "Xác nhận sản phẩm đáp ứng đầy đủ tiêu chí chấp nhận của Backlog ban đầu"
+      - "Ký biên bản nghiệm thu bản phát hành RELEASE"
+
+  # 16. scrum_master.run_retrospective
+  - id: "scrum_master_run_retrospective"
+    epic: "closure"
+    role: "SCRUM_MASTER"
+    action: "run_retrospective"
+    title: "Tổ chức họp hồi tưởng dự án (Sprint Retrospective)"
+    instruction: "Đánh giá quy trình phát triển, ghi nhận những điểm tốt và các bài học cải tiến"
+    depends_on: ["po_accept_release"]
+    input_artifact_types: ["DOCUMENTATION"]
+    output_artifact_type: "DOCUMENTATION"
+    priority: 4
+    max_attempts: 3
+    timeout_seconds: 300
+    acceptance_criteria_template:
+      - "Tổng hợp các điểm mạnh, điểm nghẽn và cải tiến cho các đợt phát triển tiếp theo"
+      - "Xuất tài liệu hồi tưởng dự án"
+
+  # 17. pm.report_status
+  - id: "pm_report_status"
+    epic: "closure"
+    role: "PM"
+    action: "report_status"
+    title: "Báo cáo tổng kết trạng thái dự án hoàn tất"
+    instruction: "Tổng hợp toàn bộ các artifact, tiến độ, thời lượng và thông báo hoàn thành vòng đời chuyển giao"
+    depends_on: ["scrum_master_run_retrospective"]
+    input_artifact_types: ["DOCUMENTATION"]
+    output_artifact_type: "DOCUMENTATION"
+    priority: 4
+    max_attempts: 3
+    timeout_seconds: 300
+    acceptance_criteria_template:
+      - "Báo cáo đầy đủ 4 phần chuẩn: đã hoàn thành, đang xử lý, bị chặn, việc tiếp theo"
+      - "Gắn kèm đường dẫn toàn bộ các artifact và liên kết GitHub, Linear"

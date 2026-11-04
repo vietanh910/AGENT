@@ -11,7 +11,12 @@
         "PERMISSION_DENIED",
         "ARTIFACT_ERROR",
         "VALIDATION_ERROR",
-        "UNKNOWN_ERROR"
+        "UNKNOWN_ERROR",
+        "WORKER_OFFLINE",
+        "DISPATCH_FAILED",
+        "LINEAR_ERROR",
+        "GITHUB_ERROR",
+        "APPROVAL_REQUIRED"
       ],
       "title": "ErrorCode",
       "type": "string"

@@ -29,6 +29,7 @@ if str(ROOT_DIR) not in sys.path:
 from agent_contract.enums import AgentRole, ErrorCode, TaskStatus
 from agent_contract.models import AgentIdentity, TaskRequest, TaskResult
 from agent_contract.registry import ACTION_MAP, CAPABILITY_REGISTRY
+from agent_contract.validators import validate_agent_id, validate_artifact_uri
 
 REQUIRED_FILES = [
     "agent.py",
@@ -441,10 +442,10 @@ def check_d6_artifacts_relative_uris(agent_path: Path, summary: AgentValidationS
     invalid_uris = []
     for item in data:
         uri = item.get("uri", "")
-        if not uri:
-            invalid_uris.append("(uri rỗng)")
-        elif uri.startswith("/") or uri.startswith("\\") or "~" in uri or ".." in uri.split("/") or re.search(r"^[a-zA-Z]:", uri):
-            invalid_uris.append(uri)
+        try:
+            validate_artifact_uri(uri)
+        except Exception as exc:
+            invalid_uris.append(f"{uri or '(rỗng)'} ({exc})")
 
     if invalid_uris:
         summary.add_check(
@@ -919,7 +920,10 @@ def main() -> int:
         print(f"Lỗi: Thư mục agents không tồn tại tại {agents_dir}", file=sys.stderr)
         return 1
 
-    agent_folders = [d for d in agents_dir.iterdir() if d.is_dir() and not d.name.startswith((".", "_"))]
+    agent_folders = [
+        d for d in agents_dir.iterdir()
+        if d.is_dir() and (d / "agent.py").exists() and not d.name.startswith((".", "_"))
+    ]
     if not agent_folders:
         print("Không tìm thấy thư mục agent nào trong agents/.", file=sys.stderr)
         return 0

@@ -1,3 +1,5 @@
+"""agents/devops/tools/terminal.py - Terminal Executor cho DevOps Agent."""
+
 import os
 import re
 import subprocess
@@ -58,17 +60,30 @@ DANGEROUS_PATTERNS = [
     re.compile(r"\brm\s+-[a-zA-Z]*f[a-zA-Z]*r\b", re.IGNORECASE),
     re.compile(r"\bgit\s+push\s+.*--force\b", re.IGNORECASE),
     re.compile(r"\bgit\s+push\s+.*-f\b", re.IGNORECASE),
+    re.compile(r"\bgit\s+push\s+.*(?:\s+|origin\s+|upstream\s+)(?:main|master)\b", re.IGNORECASE),
     re.compile(r"\bdocker\s+system\s+prune\b", re.IGNORECASE),
     re.compile(r"\bdocker\s+volume\s+prune\b", re.IGNORECASE),
     re.compile(r"\bdrop\s+(database|table|schema)\b", re.IGNORECASE),
     re.compile(r"\b(curl|wget)\b.*\|\s*(sh|bash|zsh)\b", re.IGNORECASE),
     re.compile(r"\b(sudo|su|runas)\b", re.IGNORECASE),
     re.compile(r"\b(mkfs|dd\s+if=)\b", re.IGNORECASE),
+    re.compile(r"docker\.sock", re.IGNORECASE),
 ]
 
 # Các toán tử shell bị từ chối để ngăn chặn command injection
 SHELL_OPERATORS = ["&&", "||", "|", ";", ">", ">>", "<", "`", "$("]
 MAX_OUTPUT_LENGTH = 50000
+
+DEFAULT_ALLOWED_COMMANDS = [
+    "git",
+    "docker",
+    "pytest",
+    "python",
+    "npm",
+    "mvn",
+    "curl",
+    "echo",
+]
 
 
 def mask_secrets(text: str, custom_env: dict[str, str] | None = None) -> str:
@@ -93,8 +108,10 @@ def mask_secrets(text: str, custom_env: dict[str, str] | None = None) -> str:
     masked = pattern.sub(r"\1=***REDACTED***", masked)
 
     # 3. Quét tiền tố API key phổ biến
+    masked = re.sub(r"ghp_[a-zA-Z0-9]{20,}", "***REDACTED***", masked)
     masked = re.sub(r"gsk_[a-zA-Z0-9]{20,}", "***REDACTED***", masked)
     masked = re.sub(r"sk-[a-zA-Z0-9]{20,}", "***REDACTED***", masked)
+    masked = re.sub(r"lin_api_[a-zA-Z0-9]{20,}", "***REDACTED***", masked)
     masked = re.sub(r"AIza[0-9A-Za-z\-_]{35}", "***REDACTED***", masked)
 
     return masked
@@ -114,13 +131,27 @@ class TerminalExecutor:
     def __init__(
         self,
         workspace_dir: str | Path,
-        allowed_commands: list[str],
+        allowed_commands: list[str] | None = None,
         dry_run: bool = True,
+        allowed_directories: list[str | Path] | None = None,
     ) -> None:
         self.workspace_dir = Path(workspace_dir).resolve()
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
-        self.allowed_commands = [cmd.lower().strip() for cmd in allowed_commands]
+        raw_allowed = allowed_commands or DEFAULT_ALLOWED_COMMANDS
+        self.allowed_commands = [cmd.lower().strip() for cmd in raw_allowed]
         self.dry_run = dry_run
+        self.allowed_directories: list[Path] = [self.workspace_dir]
+        if allowed_directories:
+            for d in allowed_directories:
+                p = Path(d).resolve()
+                p.mkdir(parents=True, exist_ok=True)
+                self.allowed_directories.append(p)
+
+    def add_allowed_directory(self, directory: str | Path) -> None:
+        p = Path(directory).resolve()
+        p.mkdir(parents=True, exist_ok=True)
+        if p not in self.allowed_directories:
+            self.allowed_directories.append(p)
 
     def validate_command(self, cmd_list: Sequence[str]) -> None:
         """Xác thực danh sách lệnh: kiểm tra shell operator, mẫu nguy hiểm và whitelist."""
@@ -136,12 +167,12 @@ class TerminalExecutor:
                         f"Lệnh chỉ được truyền dưới dạng list không qua shell."
                     )
 
-        # 2. Kiểm tra các mẫu lệnh nguy hiểm (ưu tiên chặn trước khi xét whitelist)
+        # 2. Kiểm tra các mẫu lệnh nguy hiểm (bao gồm docker.sock)
         cmd_str = " ".join(cmd_list)
         for pattern in DANGEROUS_PATTERNS:
             if pattern.search(cmd_str):
                 raise SecurityViolationError(
-                    f"Phát hiện mẫu lệnh phá hủy nguy hiểm bị cấm: '{pattern.pattern}' trong '{cmd_str}'."
+                    f"Phát hiện mẫu lệnh phá hủy nguy hiểm hoặc mount docker.sock bị cấm: '{pattern.pattern}' trong '{cmd_str}'."
                 )
 
         # 3. Kiểm tra Binary trong ALLOWED_COMMANDS whitelist
@@ -153,28 +184,34 @@ class TerminalExecutor:
             )
 
     def validate_cwd(self, cwd: str | Path | None) -> Path:
-        """Xác thực thư mục làm việc (cwd): bắt buộc nằm trong WORKSPACE_DIR, chặn path traversal và symlink."""
+        """Xác thực thư mục làm việc (cwd): bắt buộc nằm trong phạm vi thư mục cho phép, chặn traversal và symlink."""
         target_cwd = (Path(cwd) if cwd is not None else self.workspace_dir).resolve()
 
-        # Chặn path traversal dạng '..'
         if cwd and ".." in str(cwd).replace("\\", "/").split("/"):
             raise SecurityViolationError(f"Phát hiện path traversal '..' trong thư mục làm việc: '{cwd}'.")
 
-        # Kiểm tra symlink và vị trí tương đối
-        try:
-            target_cwd.relative_to(self.workspace_dir)
-        except ValueError:
+        is_allowed = False
+        for allowed_root in self.allowed_directories:
+            try:
+                target_cwd.relative_to(allowed_root)
+                is_allowed = True
+                break
+            except ValueError:
+                continue
+
+        if not is_allowed:
             raise SecurityViolationError(
-                f"Thư mục làm việc '{target_cwd}' nằm ngoài phạm vi WORKSPACE_DIR cho phép: '{self.workspace_dir}'."
+                f"Thư mục làm việc '{target_cwd}' nằm ngoài phạm vi WORKSPACE_DIR hoặc thư mục được cấp phép: "
+                f"{[str(d) for d in self.allowed_directories]}."
             )
 
         return target_cwd
 
     def run(
         self,
-        cmd_list: list[str],
+        cmd_list: Sequence[str],
         cwd: str | Path | None = None,
-        timeout: int = 60,
+        timeout: int = 120,
         env: dict[str, str] | None = None,
         execute: bool = False,
     ) -> ExecutionResult:
@@ -189,7 +226,7 @@ class TerminalExecutor:
         if self.dry_run or not execute:
             cmd_preview = " ".join(cmd_list)
             return ExecutionResult(
-                command=cmd_list,
+                command=list(cmd_list),
                 exit_code=0,
                 stdout=f"[DRY_RUN] Lệnh dự kiến thực thi: {cmd_preview} (tại {safe_cwd})",
                 stderr="",
@@ -202,37 +239,34 @@ class TerminalExecutor:
         merged_env = {**os.environ, **(env or {})}
 
         try:
-            process = subprocess.run(
-                cmd_list,
-                shell=False,  # TUYỆT ĐỐI KHÔNG DÙNG shell=True
+            proc = subprocess.run(
+                list(cmd_list),
                 cwd=str(safe_cwd),
-                timeout=float(timeout),
                 capture_output=True,
                 text=True,
+                timeout=timeout,
+                shell=False,
                 env=merged_env,
-                encoding="utf-8",
-                errors="replace",
             )
             duration_ms = int((time.perf_counter() - start_time) * 1000)
-            masked_stdout = truncate_output(mask_secrets(process.stdout, env))
-            masked_stderr = truncate_output(mask_secrets(process.stderr, env))
 
-            if process.returncode != 0:
-                # Phân loại retryable dựa trên lỗi (ví dụ lỗi mạng git pull có thể retry, syntax error thì không)
-                retryable = "timed out" in masked_stderr.lower() or "connection" in masked_stderr.lower()
+            stdout = mask_secrets(truncate_output(proc.stdout), env)
+            stderr = mask_secrets(truncate_output(proc.stderr), env)
+
+            if proc.returncode != 0:
                 raise CommandExecutionError(
-                    message=f"Lệnh '{cmd_list[0]}' thất bại với mã thoát {process.returncode}.",
-                    exit_code=process.returncode,
-                    stdout=masked_stdout,
-                    stderr=masked_stderr,
-                    retryable=retryable,
+                    message=f"Lệnh '{cmd_list[0]}' thất bại với mã lỗi {proc.returncode}: {stderr or stdout}",
+                    exit_code=proc.returncode,
+                    stdout=stdout,
+                    stderr=stderr,
+                    retryable=False,
                 )
 
             return ExecutionResult(
-                command=cmd_list,
-                exit_code=process.returncode,
-                stdout=masked_stdout,
-                stderr=masked_stderr,
+                command=list(cmd_list),
+                exit_code=proc.returncode,
+                stdout=stdout,
+                stderr=stderr,
                 duration_ms=duration_ms,
                 dry_run=False,
             )
@@ -240,5 +274,5 @@ class TerminalExecutor:
         except subprocess.TimeoutExpired as e:
             duration_ms = int((time.perf_counter() - start_time) * 1000)
             raise CommandTimeoutError(
-                f"Lệnh '{cmd_list[0]}' đã quá thời gian thực thi tối đa ({timeout} giây)."
+                f"Lệnh '{cmd_list[0]}' chạy quá thời gian thực thi tối đa ({timeout} giây)."
             ) from e

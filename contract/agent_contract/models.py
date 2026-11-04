@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -18,7 +19,7 @@ from agent_contract.validators import (
     validate_task_result_status_and_error,
 )
 
-CONTRACT_VERSION: str = "1.1.0"
+CONTRACT_VERSION: str = "1.3.0"
 
 
 class AgentIdentity(BaseModel):
@@ -66,6 +67,7 @@ class ArtifactRef(BaseModel):
     created_by: str
     created_at: datetime
     checksum: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("uri")
     @classmethod
@@ -198,3 +200,35 @@ def blocked_result(
         error=error,
         metadata=metadata or {},
     )
+
+
+# =============================================================================
+# CÁC MODEL VERDICT (Dùng cho outputs[0] của TESTER, SECURITY, PO accept_release)
+# =============================================================================
+
+class VerdictStatus(str, Enum):
+    """Trạng thái phán quyết nghiệm thu / kiểm thử."""
+    PASS = "PASS"
+    FAIL = "FAIL"
+
+
+class FindingSeverity(str, Enum):
+    """Mức độ nghiêm trọng của vấn đề / lỗi phát hiện."""
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
+
+
+class VerdictFinding(BaseModel):
+    """Chi tiết từng phát hiện trong báo cáo phán quyết."""
+    severity: FindingSeverity
+    title: str
+    detail: str
+
+
+class Verdict(BaseModel):
+    """Cấu trúc Verdict chuẩn bắt buộc trong outputs[0] của TESTER, SECURITY và PO."""
+    verdict: VerdictStatus
+    findings: list[VerdictFinding] = Field(default_factory=list)
+

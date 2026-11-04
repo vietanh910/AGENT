@@ -1,0 +1,68 @@
+{
+  "description": "Thông tin phê duyệt tại các cổng duyệt (gate).",
+  "properties": {
+    "gate": {
+      "title": "Gate",
+      "type": "string"
+    },
+    "status": {
+      "default": "PENDING",
+      "title": "Status",
+      "type": "string"
+    },
+    "decided_by": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Decided By"
+    },
+    "decided_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Decided At"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reason"
+    },
+    "run_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Run Id"
+    }
+  },
+  "required": [
+    "gate"
+  ],
+  "title": "Approval",
+  "type": "object"
+}

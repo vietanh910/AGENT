@@ -63,6 +63,11 @@
       ],
       "default": null,
       "title": "Checksum"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
     }
   },
   "required": [

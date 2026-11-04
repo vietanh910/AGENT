@@ -20,6 +20,7 @@ if str(ROOT_DIR) not in sys.path:
 if str(ROOT_DIR / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT_DIR / "scripts"))
 
+from agent_contract import CONTRACT_VERSION
 from agent_contract.enums import AgentRole, ArtifactType, ErrorCode, TaskStatus
 from agent_contract.models import ArtifactRef, Constraints, TaskRequest, TaskResult
 import lan_check
@@ -62,7 +63,7 @@ class TestAgentAPIAuthAndStartup:
         assert data["status"] in ["ok", "healthy"]
         assert data["agent_id"] == "pm-01"
         assert data["role"] == "PM"
-        assert data["contract_version"] == "1.0.0"
+        assert data["contract_version"] == CONTRACT_VERSION
         assert "agent_version" in data
         assert "timestamp" in data
 

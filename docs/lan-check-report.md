@@ -1,17 +1,13 @@
-# Báo cáo kiểm tra kết nối mạng LAN (LAN Connectivity Report)
-*Thời gian kiểm tra:* 2026-11-03T02:31:12.976995Z
+# Báo cáo Kiểm tra Kết nối Mạng LAN (Agent API v1)
 
-## 1. Kết quả kiểm tra từng Agent
+*Thời gian thực thi: 2026-11-04T13:12:34.989551+00:00*
 
-| Agent ID | Endpoint URL | /health | Bảo mật Auth (401) | Độ trễ | Contract Version | Ghi chú / Lỗi |
-|---|---|---|---|---|---|---|
-| `devops-01` | `http://127.0.0.1:51021` | ✅ PASS | ✅ PASS | 53 ms | `1.0.0` | Hoạt động bình thường |
-| `pm-01` | `http://127.0.0.1:51020` | ✅ PASS | ✅ PASS | 43 ms | `1.0.0` | Hoạt động bình thường |
+## 1. Kết quả Chi tiết
 
-## 2. Đánh giá tính đồng nhất Contract Version
-- ✅ **ĐỒNG NHẤT**: Tất cả các agent đang chạy chung phiên bản: `1.0.0`
+| AGENT ID | ENDPOINT | HEALTH | AUTH 401 | ĐỘ TRỄ | VERSION |
+|---|---|---|---|---|---|
+| `devops-01` | `http://127.0.0.1:49814` | PASS | PASS | 36ms | `1.3.0` |
+| `pm-01` | `http://127.0.0.1:49813` | PASS | PASS | 32ms | `1.3.0` |
 
-## 3. Hướng dẫn khắc phục sự cố (Troubleshooting)
-- **Lỗi `Connection Refused`**: Kiểm tra Agent đã chạy chưa (`python -m uvicorn api:app`), Agent có bind `0.0.0.0` không, và cổng có đúng không.
-- **Lỗi `Timeout`**: Kiểm tra Firewall trên máy đích đã mở cổng cho dải IP mạng LAN chưa.
-- **Lỗi `Auth không trả 401`**: Kiểm tra file `api.py` đã kích hoạt dependency `verify_bearer_token` cho endpoint `/agent` chưa.
+## 2. Đồng bộ Phiên bản
+- Tính đồng nhất contract_version: **ĐỒNG NHẤT** (`1.3.0`)

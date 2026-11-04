@@ -1,0 +1,61 @@
+# =============================================================================
+# Cấu hình ánh xạ Linear cho PC1 Control Node - ai-team
+# =============================================================================
+
+# ID của Team quản lý trên Linear (chuỗi UUID hoặc Team Key)
+team_id: "team_placeholder_id"
+
+# Ánh xạ dispatch_state nội bộ của hệ thống sang tên trạng thái trong Linear Workflow
+# Lưu ý: Các tên trạng thái phải trùng khớp chính xác với Workflow States trong Team của bạn
+dispatch_state_map:
+  QUEUED: "Backlog"
+  ASSIGNED: "Todo"
+  RUNNING: "In Progress"
+  RETRY_WAIT: "In Progress"
+  BLOCKED: "In Progress"
+  COMPLETED: "Done"
+  FAILED: "Canceled"
+  CANCELLED: "Canceled"
+
+# Các nhãn (Issue Labels) đặc biệt phục vụ kiểm soát tiến trình
+special_labels:
+  blocked: "blocked"
+  needs_approval: "needs-approval"
+
+# Nhãn nhận diện Role của từng Agent (Agent không phải là user Linear)
+role_labels:
+  PM: "agent:pm"
+  DEVOPS: "agent:devops"
+  SA: "agent:sa"
+  DBA: "agent:dba"
+  BA: "agent:ba"
+  PO: "agent:po"
+  DEV: "agent:dev"
+  TESTER: "agent:tester"
+  SCRUM_MASTER: "agent:scrum_master"
+  SECURITY: "agent:security"
+
+# Ánh xạ mã máy vật lý của các Agent để ghi vào mô tả / comment
+agent_machines:
+  pm-01: "PC1"
+  devops-01: "PC1"
+  sa-01: "PC2"
+  dba-01: "PC2"
+  ba-01: "PC3"
+  po-01: "PC3"
+  dev-01: "PC4"
+  tester-01: "PC4"
+  scrum_master-01: "PC5"
+  security-01: "PC5"
+
+# Giới hạn số request ghi tối đa mỗi phút để tránh chạm trần Rate Limit (mặc định thận trọng)
+linear_max_req_per_min: 50
+
+# Giới hạn số issue tối đa tạo trên Linear cho mỗi Workflow Run (bảo vệ quota gói Free)
+max_linear_issues_per_run: 50
+
+# Chu kỳ polling Linear (giây) để nhận phê duyệt và thông tin gỡ chặn
+linear_poll_seconds: 20
+
+# Số lần thử lại tối đa trước khi đưa vào Dead-Letter Queue (DLQ)
+max_sync_attempts: 5

@@ -16,6 +16,17 @@ from agent_contract.models import (
     NextAction,
     TaskRequest,
     TaskResult,
+    Verdict,
+)
+from agent_contract.system_models import (
+    Approval,
+    AuditEvent,
+    DispatchAck,
+    DispatchRequest,
+    Heartbeat,
+    RunTask,
+    WorkerRegistration,
+    WorkflowRun,
 )
 
 MODELS = [
@@ -27,6 +38,15 @@ MODELS = [
     AgentError,
     NextAction,
     TaskResult,
+    Verdict,
+    WorkerRegistration,
+    Heartbeat,
+    DispatchRequest,
+    DispatchAck,
+    WorkflowRun,
+    RunTask,
+    Approval,
+    AuditEvent,
 ]
 
 

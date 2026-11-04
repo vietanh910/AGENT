@@ -26,31 +26,80 @@ from agent_contract.models import (
     make_error,
 )
 from agent_contract.registry import ACTION_MAP, CAPABILITY_REGISTRY
-from config import DevOpsConfig
-from llm import LLMClient, LLMError
-from prompt import DEVOPS_SYSTEM_PROMPT, build_messages
-from schemas import (
-    BuildReport,
-    CIConfigReport,
-    CommandPlan,
-    DeploymentReport,
-    GitOperationReport,
-    HealthCheckReport,
-    MonitoringReport,
-    TestRunReport,
-)
-from tools.artifact import ArtifactError, save_artifact
-from tools.deployment import deploy, health_check
-from tools.docker import docker_build, docker_compose
-from tools.git import git_pull
-from tools.terminal import (
-    CommandExecutionError,
-    CommandTimeoutError,
-    SecurityViolationError,
-    TerminalError,
-    TerminalExecutor,
-)
-from tools.testing import run_tests
+try:
+    from agents.devops.config import DevOpsConfig
+    from agents.devops.llm import LLMClient, LLMError
+    from agents.devops.prompt import DEVOPS_SYSTEM_PROMPT, build_messages
+    from agents.devops.schemas import (
+        BuildReport,
+        CIConfigReport,
+        CommandPlan,
+        DeploymentReport,
+        GitOperationReport,
+        HealthCheckReport,
+        MonitoringReport,
+        TestRunReport,
+    )
+    from agents.devops.tools.artifact import ArtifactError, save_artifact
+    from agents.devops.tools.deployment import deploy, health_check
+    from agents.devops.tools.docker import docker_build, docker_compose
+    from agents.devops.tools.git import git_pull
+    from agents.devops.tools.terminal import (
+        CommandExecutionError,
+        CommandTimeoutError,
+        SecurityViolationError,
+        TerminalError,
+        TerminalExecutor,
+    )
+    from agents.devops.tools.testing import run_tests
+except ImportError:
+    from config import DevOpsConfig
+    from llm import LLMClient, LLMError
+    from prompt import DEVOPS_SYSTEM_PROMPT, build_messages
+    from schemas import (
+        BuildReport,
+        CIConfigReport,
+        CommandPlan,
+        DeploymentReport,
+        GitOperationReport,
+        HealthCheckReport,
+        MonitoringReport,
+        TestRunReport,
+    )
+    from tools.artifact import ArtifactError, save_artifact
+    from tools.deployment import deploy, health_check
+    from tools.docker import docker_build, docker_compose
+    from tools.git import git_pull
+    from tools.terminal import (
+        CommandExecutionError,
+        CommandTimeoutError,
+        SecurityViolationError,
+        TerminalError,
+        TerminalExecutor,
+    )
+    from tools.testing import run_tests
+
+try:
+    import tools.terminal as _root_term
+    _RootCommandExecutionError = _root_term.CommandExecutionError
+    _RootCommandTimeoutError = _root_term.CommandTimeoutError
+    _RootSecurityViolationError = _root_term.SecurityViolationError
+    _RootTerminalError = _root_term.TerminalError
+except Exception:
+    _RootCommandExecutionError = CommandExecutionError
+    _RootCommandTimeoutError = CommandTimeoutError
+    _RootSecurityViolationError = SecurityViolationError
+    _RootTerminalError = TerminalError
+
+try:
+    from control.app.config import settings
+except ImportError:
+    settings = None
+
+try:
+    from control.app.services.staging_manager import StagingManager
+except ImportError:
+    StagingManager = None
 
 
 def action(
@@ -291,7 +340,7 @@ class BaseAgent:
             self.identity.status = AgentStatus.IDLE
             self._current_task = None
 
-        except SecurityViolationError as err:
+        except (SecurityViolationError, _RootSecurityViolationError) as err:
             self.identity.status = AgentStatus.BLOCKED
             self._current_task = None
             # Nếu vi phạm liên quan tới prod hoặc lệnh phá hủy, trả BLOCKED
@@ -300,7 +349,7 @@ class BaseAgent:
                 make_error(code=ErrorCode.PERMISSION_DENIED, message=str(err), retryable=False),
                 summary=f"Tác vụ '{request.action}' bị chặn do vi phạm an toàn.",
             )
-        except CommandTimeoutError as err:
+        except (CommandTimeoutError, _RootCommandTimeoutError) as err:
             self.identity.status = AgentStatus.FAILED
             self._current_task = None
             final_result = failed_result(
@@ -308,7 +357,7 @@ class BaseAgent:
                 make_error(code=ErrorCode.TIMEOUT, message=str(err), retryable=True),
                 summary=f"Lệnh quá thời gian thực thi trong action '{request.action}'",
             )
-        except CommandExecutionError as err:
+        except (CommandExecutionError, _RootCommandExecutionError) as err:
             self.identity.status = AgentStatus.FAILED
             self._current_task = None
             final_result = failed_result(
@@ -317,7 +366,8 @@ class BaseAgent:
                     code=ErrorCode.TOOL_ERROR,
                     message=str(err),
                     retryable=err.retryable,
-                    details={"exit_code": err.exit_code, "stderr": err.stderr},
+                    exit_code=err.exit_code,
+                    stderr=err.stderr,
                 ),
                 summary=f"Lỗi thực thi lệnh trong action '{request.action}'",
             )
@@ -329,7 +379,7 @@ class BaseAgent:
                 make_error(code=ErrorCode.LLM_ERROR, message=str(err), retryable=True),
                 summary=f"Lỗi LLM trong action '{request.action}'",
             )
-        except (ArtifactError, TerminalError) as err:
+        except (ArtifactError, TerminalError, _RootTerminalError) as err:
             self.identity.status = AgentStatus.FAILED
             self._current_task = None
             final_result = failed_result(
@@ -465,7 +515,24 @@ class DevOpsAgent(BaseAgent):
             for cmd in plan.commands:
                 self.terminal.validate_command(cmd)
 
-        exec_res = docker_build(tag=tag, dockerfile=dockerfile, terminal=self.terminal, execute=should_exec)
+        exec_res = docker_build(
+            tag=tag,
+            path=request.context.get("path", "."),
+            dockerfile=dockerfile,
+            terminal=self.terminal,
+            execute=should_exec,
+        )
+
+        # Đẩy image lên registry nếu REGISTRY_URL được cấu hình
+        registry_url = (
+            request.context.get("registry_url")
+            or getattr(self.config, "registry_url", None)
+            or (getattr(settings, "REGISTRY_URL", "") if settings else "")
+        )
+        if registry_url and str(registry_url).strip():
+            reg_tag = f"{str(registry_url).rstrip('/')}/{tag}"
+            self.terminal.run(["docker", "tag", tag, reg_tag], execute=should_exec)
+            self.terminal.run(["docker", "push", reg_tag], execute=should_exec)
 
         report = BuildReport(
             image_name=tag.split(":")[0],
@@ -521,6 +588,14 @@ class DevOpsAgent(BaseAgent):
                 "EXPOSE 8000\n"
                 "CMD [\"python\", \"-m\", \"cli\"]\n"
             )
+            ref = save_artifact(
+                name=filename,
+                type=ArtifactType.DEPLOYMENT,
+                content=content,
+                created_by=self.identity.agent_id,
+                artifact_dir=self.config.artifact_dir,
+            )
+            artifacts = [ref]
         elif config_type == "docker_compose":
             filename = "docker-compose.yml"
             content = (
@@ -531,8 +606,16 @@ class DevOpsAgent(BaseAgent):
                 "    ports:\n"
                 "      - '8000:8000'\n"
                 "    environment:\n"
-                "      - ENV=production\n"
+                "      - ENV=staging\n"
             )
+            ref = save_artifact(
+                name=filename,
+                type=ArtifactType.DEPLOYMENT,
+                content=content,
+                created_by=self.identity.agent_id,
+                artifact_dir=self.config.artifact_dir,
+            )
+            artifacts = [ref]
         else:
             filename = "ci.yml"
             content = (
@@ -550,21 +633,58 @@ class DevOpsAgent(BaseAgent):
                 "      - name: Run Tests\n"
                 "        run: pytest contract agents\n"
             )
-
-        ref = save_artifact(
-            name=filename,
-            type=ArtifactType.DEPLOYMENT,
-            content=content,
-            created_by=self.identity.agent_id,
-            artifact_dir=self.config.artifact_dir,
-        )
+            ref_ci = save_artifact(
+                name=filename,
+                type=ArtifactType.DEPLOYMENT,
+                content=content,
+                created_by=self.identity.agent_id,
+                artifact_dir=self.config.artifact_dir,
+            )
+            df_content = (
+                "# Multi-stage Dockerfile chuẩn hóa\n"
+                "FROM python:3.11-slim\n"
+                "WORKDIR /app\n"
+                "COPY . .\n"
+                "EXPOSE 8000\n"
+                "CMD [\"python\", \"-m\", \"cli\"]\n"
+            )
+            ref_df = save_artifact(
+                name="Dockerfile",
+                type=ArtifactType.DEPLOYMENT,
+                content=df_content,
+                created_by=self.identity.agent_id,
+                artifact_dir=self.config.artifact_dir,
+            )
+            dc_content = (
+                "version: '3.8'\n"
+                "services:\n"
+                "  app:\n"
+                "    build: .\n"
+                "    ports:\n"
+                "      - '8000:8000'\n"
+                "    environment:\n"
+                "      - ENV=staging\n"
+            )
+            ref_dc = save_artifact(
+                name="docker-compose.yml",
+                type=ArtifactType.DEPLOYMENT,
+                content=dc_content,
+                created_by=self.identity.agent_id,
+                artifact_dir=self.config.artifact_dir,
+            )
+            artifacts = [ref_ci, ref_df, ref_dc]
 
         report = CIConfigReport(
             config_type=config_type,
             filename=filename,
             content=content,
-            artifact_uri=ref.uri,
+            artifact_uri=artifacts[0].uri,
         )
+
+        output_dict = report.model_dump(mode="json")
+        output_dict["pr_number"] = request.context.get("pr_number", 1)
+        output_dict["head_sha"] = request.context.get("head_sha", "0123456789abcdef")
+        output_dict["branch"] = "devops/ci-setup"
 
         return TaskResult(
             contract_version=request.contract_version,
@@ -572,8 +692,8 @@ class DevOpsAgent(BaseAgent):
             agent_id=request.agent_id,
             status=TaskStatus.COMPLETED,
             summary=f"Đã tạo cấu hình CI/CD '{filename}' lưu vào artifact.",
-            outputs=[report.model_dump(mode="json")],
-            artifacts=[ref],
+            outputs=[output_dict],
+            artifacts=artifacts,
             next_actions=[
                 NextAction(
                     suggested_role=AgentRole.DEVOPS,
@@ -628,24 +748,48 @@ class DevOpsAgent(BaseAgent):
     # -------------------------------------------------------------------------
     @action("deploy", output_model=DeploymentReport, capability="deployment")
     def handle_deploy(self, request: TaskRequest) -> TaskResult:
-        """Triển khai dịch vụ lên môi trường mục tiêu; chặn môi trường Production."""
+        """Triển khai dịch vụ lên môi trường mục tiêu; kiểm soát nghiêm ngặt Production."""
         env = request.context.get("environment", "staging")
         service = request.context.get("service_name", "web-service")
         image_tag = request.context.get("image_tag", "web-service:v1.0")
         rollback = request.context.get("rollback_plan", ["docker compose down", "docker compose -f rollback.yml up -d"])
         should_exec = self._should_execute(request)
 
-        # Chặn deploy lên Prod
+        # Chặn deploy lên Prod nếu thiếu cờ hoặc thiếu duyệt
         if env.lower() in ["prod", "production"]:
-            return blocked_result(
-                request,
-                make_error(
-                    code=ErrorCode.PERMISSION_DENIED,
-                    message="Triển khai lên môi trường PRODUCTION bị chặn tuyệt đối! Yêu cầu con người phê duyệt trực tiếp.",
-                    retryable=False,
-                ),
-                summary="Triển khai Production bị chặn.",
+            allow_prod = request.context.get("allow_prod_deploy", False) or (
+                getattr(settings, "ALLOW_PROD_DEPLOY", False) if settings else False
             )
+            gate_approved = request.context.get("gate_approved", False)
+            if not allow_prod:
+                return blocked_result(
+                    request,
+                    make_error(
+                        code=ErrorCode.PERMISSION_DENIED,
+                        message="Triển khai Production bị chặn bởi cấu hình hệ thống (ALLOW_PROD_DEPLOY=false).",
+                        retryable=False,
+                    ),
+                    summary="Triển khai Production bị chặn: PERMISSION_DENIED.",
+                )
+            if not gate_approved:
+                return blocked_result(
+                    request,
+                    make_error(
+                        code=ErrorCode.APPROVAL_REQUIRED,
+                        message="Triển khai Production yêu cầu cổng approve_prod đã được phê duyệt.",
+                        retryable=False,
+                    ),
+                    summary="Triển khai Production bị chặn: APPROVAL_REQUIRED.",
+                )
+
+        # Chuẩn bị StagingManager cho staging
+        staging_mgr = None
+        run_id = request.context.get("run_id") or request.task_id.split("_")[0]
+        if StagingManager is not None and env.lower() == "staging":
+            try:
+                staging_mgr = StagingManager()
+            except Exception:
+                staging_mgr = None
 
         # Thực hiện deploy qua tool
         report = deploy(
@@ -655,6 +799,12 @@ class DevOpsAgent(BaseAgent):
             rollback_plan=rollback,
             terminal=self.terminal,
             execute=should_exec,
+            run_id=run_id,
+            staging_manager=staging_mgr,
+            container_port=int(request.context.get("container_port", 8000)),
+            env_vars=request.context.get("env_vars"),
+            allow_prod_deploy=request.context.get("allow_prod_deploy", False),
+            gate_approved=request.context.get("gate_approved", False),
         )
 
         # Tạo artifact báo cáo deploy (ArtifactType.DEPLOYMENT)
@@ -699,12 +849,51 @@ class DevOpsAgent(BaseAgent):
     # -------------------------------------------------------------------------
     @action("health_check", output_model=HealthCheckReport, capability="health_check")
     def handle_health_check(self, request: TaskRequest) -> TaskResult:
-        """Kiểm tra sức khỏe dịch vụ bằng HTTP request với timeout."""
+        """Kiểm tra sức khỏe dịch vụ bằng HTTP request với timeout và retry."""
         endpoint = request.context.get("endpoint", "http://localhost:8080/health")
         timeout = float(request.context.get("timeout_seconds", 5.0))
-        dry_run = not self._should_execute(request)
+        max_retries = int(request.context.get("max_retries", 3))
+        expected_status = int(request.context.get("expected_status", 200))
+        retry_delay = float(request.context.get("retry_delay", 0.5))
+        should_exec = self._should_execute(request)
+        dry_run = not should_exec
 
-        report = health_check(endpoint=endpoint, timeout=timeout, dry_run=dry_run)
+        report = health_check(
+            endpoint=endpoint,
+            expected_status=expected_status,
+            timeout=timeout,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            dry_run=dry_run,
+        )
+
+        if report.status == "UNHEALTHY":
+            return failed_result(
+                request,
+                make_error(
+                    code=ErrorCode.TOOL_ERROR,
+                    message=f"Kiểm tra sức khỏe dịch vụ tại '{endpoint}' thất bại: {report.response_body_sample}",
+                    retryable=True,
+                ),
+                summary=f"Health check thất bại cho '{endpoint}' ({report.status_code})",
+            )
+
+        # Lưu artifact báo cáo health check
+        content = (
+            f"# Báo cáo Kiểm tra Sức khỏe Dịch vụ\n\n"
+            f"- **Endpoint:** {report.endpoint}\n"
+            f"- **Trạng thái:** {report.status}\n"
+            f"- **Mã phản hồi:** {report.status_code}\n"
+            f"- **Độ trễ:** {report.latency_ms:.1f}ms\n"
+            f"- **Phản hồi:** `{report.response_body_sample}`\n"
+        )
+        ref = save_artifact(
+            name="health-check-report.md",
+            type=ArtifactType.DEPLOYMENT,
+            content=content,
+            created_by=self.identity.agent_id,
+            artifact_dir=self.config.artifact_dir,
+        )
 
         return TaskResult(
             contract_version=request.contract_version,
@@ -713,7 +902,7 @@ class DevOpsAgent(BaseAgent):
             status=TaskStatus.COMPLETED,
             summary=f"Kiểm tra sức khỏe endpoint '{endpoint}': trạng thái {report.status}.",
             outputs=[report.model_dump(mode="json")],
-            artifacts=[],
+            artifacts=[ref],
             next_actions=[
                 NextAction(
                     suggested_role=AgentRole.DEVOPS,

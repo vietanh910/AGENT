@@ -1,0 +1,52 @@
+# =============================================================================
+# Docker Compose cho Control Node (PC1) - ai-team
+# Chỉ chạy tầng hạ tầng (MySQL 8.4 LTS và Redis), không đưa ứng dụng control vào đây.
+# Các cổng chỉ bind 127.0.0.1 để bảo mật nội bộ trên PC1.
+# =============================================================================
+
+services:
+  mysql:
+    image: mysql:${MYSQL_VERSION:-8.4}
+    container_name: ai-team-mysql
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+00:00
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_password_change_me}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ai_team}
+      MYSQL_USER: ${MYSQL_USER:-ai_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ai_password_change_me}
+      TZ: UTC
+    ports:
+      - "127.0.0.1:${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u $$MYSQL_USER -p$$MYSQL_PASSWORD || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: ai-team-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local

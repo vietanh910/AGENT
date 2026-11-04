@@ -2,6 +2,27 @@
 
 Tất cả các thay đổi về Agent Contract sẽ được ghi lại tại tài liệu này.
 
+## [1.3.0] - 2026-11-04
+### Bổ sung Metadata cho ArtifactRef (Prompt S6 - Artifact Store & GitHub)
+- Nâng `CONTRACT_VERSION` từ `"1.2.0"` lên `"1.3.0"`. `CONTRACT_MIN_VERSION` của các agent giữ nguyên `"1.0.0"`.
+- Bổ sung trường `metadata: dict[str, Any] = Field(default_factory=dict)` vào `ArtifactRef` để lưu trữ thông tin commit sha, PR number, branch, verdict, v.v. (tương thích ngược hoàn toàn với phiên bản cũ).
+- Cập nhật 17 JSON Schemas trong `contract/schemas/`.
+
+## [1.2.0] - 2026-11-04
+### Mở rộng Contract cho Hệ thống (Prompt S2 - System Phase)
+- Nâng `CONTRACT_VERSION` từ `"1.1.0"` lên `"1.2.0"`. `CONTRACT_MIN_VERSION` của các agent giữ nguyên `"1.0.0"`.
+- Bổ sung `system_models.py` phục vụ giai đoạn System Phase (PC1 Control Node & Worker Hosts PC2..PC5):
+  - Models: `WorkerRegistration`, `HeartbeatAgentStatus`, `Heartbeat`, `DispatchRequest`, `DispatchAck`, `WorkflowRun`, `RunTask`, `Approval`, `AuditEvent`.
+  - Enums: `RunStatus`, `DispatchState`, `SystemEventType`.
+  - Bảng ánh xạ trạng thái `DISPATCH_TO_TASK_STATUS` (từ `DispatchState` trong DB sang `TaskStatus` của Contract).
+- Bổ sung 5 giá trị mã lỗi `ErrorCode`: `WORKER_OFFLINE`, `DISPATCH_FAILED`, `LINEAR_ERROR`, `GITHUB_ERROR`, `APPROVAL_REQUIRED`.
+- Bổ sung Model `Verdict` (gồm `verdict`: `PASS` | `FAIL`, `findings`: list[{severity, title, detail}]) bắt buộc cho `outputs[0]` của TESTER, SECURITY và PO (`accept_release`).
+- Mở rộng `ArtifactRef.uri`: Cho phép thêm 3 dạng URI scheme: `github://owner/repo/pull/<n>`, `github://owner/repo/commit/<sha>`, `artifact://<id>`. Tiếp tục chặn đường dẫn tuyệt đối và path traversal `..`.
+- Bổ sung danh bạ `AGENT_REGISTRY_DEFAULT` gồm 10 Agent theo đúng bảng phân bổ trên 5 máy (PC1: PM, DevOps; PC2: SA, DBA; PC3: BA, PO; PC4: DEV, TESTER; PC5: SCRUM_MASTER, SECURITY).
+- Chuẩn hóa validation `agent_id` theo định dạng `<role viết thường>-NN` với role thuộc `AgentRole`.
+- Đăng ký bổ sung pipeline actions: DEV `implement_feature`, SCRUM_MASTER `run_sprint_review` vào `ACTION_MAP` và `CAPABILITY_REGISTRY`.
+- Cập nhật công cụ `export_schemas` xuất 17 JSON Schemas hoàn chỉnh.
+
 ## [1.1.0] - 2026-11-03
 ### Nâng cấp Contract v1.1.0 (Prompt 8 - PM Conductor)
 - Nâng `CONTRACT_VERSION` từ `"1.0.0"` lên `"1.1.0"`. `CONTRACT_MIN_VERSION` của các agent giữ nguyên `"1.0.0"`.

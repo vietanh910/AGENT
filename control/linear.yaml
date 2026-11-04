@@ -1,0 +1,48 @@
+# =============================================================================
+# Cấu hình ánh xạ Linear cho PC1 Control Node - ai-team
+# =============================================================================
+
+team_id: "95ea7ff9-5afb-4cc3-96a7-1bf238580335"
+
+dispatch_state_map:
+  QUEUED: "Backlog"
+  ASSIGNED: "Todo"
+  RUNNING: "In Progress"
+  RETRY_WAIT: "In Progress"
+  BLOCKED: "In Progress"
+  COMPLETED: "Done"
+  FAILED: "Canceled"
+  CANCELLED: "Canceled"
+
+special_labels:
+  blocked: "blocked"
+  needs_approval: "needs-approval"
+
+role_labels:
+  PM: "agent:pm"
+  DEVOPS: "agent:devops"
+  SA: "agent:sa"
+  DBA: "agent:dba"
+  BA: "agent:ba"
+  PO: "agent:po"
+  DEV: "agent:dev"
+  TESTER: "agent:tester"
+  SCRUM_MASTER: "agent:scrum_master"
+  SECURITY: "agent:security"
+
+agent_machines:
+  pm-01: "PC1"
+  devops-01: "PC1"
+  sa-01: "PC2"
+  dba-01: "PC2"
+  ba-01: "PC3"
+  po-01: "PC3"
+  dev-01: "PC4"
+  tester-01: "PC4"
+  scrum_master-01: "PC5"
+  security-01: "PC5"
+
+linear_max_req_per_min: 50
+max_linear_issues_per_run: 50
+linear_poll_seconds: 20
+max_sync_attempts: 5

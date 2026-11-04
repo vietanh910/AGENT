@@ -1,0 +1,30 @@
+# =============================================================================
+# Control Node (PC1) - Dependencies đã ghim phiên bản (Rule 7)
+# =============================================================================
+
+# FastAPI & Web
+fastapi==0.162.0
+uvicorn==0.54.0
+pydantic==2.14.2
+pydantic-settings==2.16.2
+
+# Cơ sở dữ liệu MySQL 8.4 LTS
+SQLAlchemy==2.1.8
+PyMySQL==1.2.3
+cryptography==50.0.2
+alembic==1.20.1
+
+# Hàng đợi & Khóa phân tán Redis
+redis==8.1.0
+fakeredis==2.40.0
+
+# LangGraph & Checkpoint cho MySQL
+langgraph==1.0.8
+langgraph-checkpoint-mysql==3.0.0
+langgraph-checkpoint==4.3.1
+
+# Testing & Utilities
+pytest==8.4.2
+pytest-asyncio==0.25.3
+httpx==0.28.1
+PyYAML==6.0.3

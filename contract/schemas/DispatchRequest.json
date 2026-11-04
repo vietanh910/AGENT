@@ -1,0 +1,208 @@
+{
+  "$defs": {
+    "AgentRole": {
+      "description": "Vai trò của Agent trong đội ngũ phát triển phần mềm.",
+      "enum": [
+        "PM",
+        "SA",
+        "BA",
+        "PO",
+        "DEV",
+        "TESTER",
+        "DEVOPS",
+        "DBA",
+        "SCRUM_MASTER",
+        "SECURITY"
+      ],
+      "title": "AgentRole",
+      "type": "string"
+    },
+    "ArtifactRef": {
+      "description": "Tham chiếu siêu dữ liệu tới một Artifact trong hệ thống.",
+      "properties": {
+        "artifact_id": {
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/ArtifactType"
+        },
+        "version": {
+          "default": "1.0",
+          "title": "Version",
+          "type": "string"
+        },
+        "uri": {
+          "title": "Uri",
+          "type": "string"
+        },
+        "created_by": {
+          "title": "Created By",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "checksum": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Checksum"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "title": "Metadata",
+          "type": "object"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "name",
+        "type",
+        "uri",
+        "created_by",
+        "created_at"
+      ],
+      "title": "ArtifactRef",
+      "type": "object"
+    },
+    "ArtifactType": {
+      "description": "Loại Artifact được tạo hoặc chuyển giao giữa các Agent.",
+      "enum": [
+        "REQUIREMENT",
+        "USER_STORY",
+        "ARCHITECTURE",
+        "DATABASE_SCHEMA",
+        "SOURCE_CODE",
+        "TEST_CASE",
+        "TEST_REPORT",
+        "SECURITY_REPORT",
+        "DEPLOYMENT",
+        "DOCUMENTATION",
+        "PLAN",
+        "BACKLOG",
+        "OTHER"
+      ],
+      "title": "ArtifactType",
+      "type": "string"
+    },
+    "Constraints": {
+      "description": "Các ràng buộc về thời hạn, ưu tiên và timeout của tác vụ.",
+      "properties": {
+        "deadline": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deadline"
+        },
+        "priority": {
+          "$ref": "#/$defs/Priority",
+          "default": "MEDIUM"
+        },
+        "timeout_seconds": {
+          "default": 300,
+          "title": "Timeout Seconds",
+          "type": "integer"
+        }
+      },
+      "title": "Constraints",
+      "type": "object"
+    },
+    "Priority": {
+      "description": "Mức độ ưu tiên của Task.",
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ],
+      "title": "Priority",
+      "type": "string"
+    }
+  },
+  "description": "Yêu cầu điều phối tác vụ gửi tới Worker Host kèm callback_url và lần thử.",
+  "properties": {
+    "contract_version": {
+      "default": "1.3.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "project_id": {
+      "title": "Project Id",
+      "type": "string"
+    },
+    "agent_id": {
+      "title": "Agent Id",
+      "type": "string"
+    },
+    "role": {
+      "$ref": "#/$defs/AgentRole"
+    },
+    "action": {
+      "title": "Action",
+      "type": "string"
+    },
+    "instruction": {
+      "title": "Instruction",
+      "type": "string"
+    },
+    "context": {
+      "additionalProperties": true,
+      "title": "Context",
+      "type": "object"
+    },
+    "input_artifacts": {
+      "items": {
+        "$ref": "#/$defs/ArtifactRef"
+      },
+      "title": "Input Artifacts",
+      "type": "array"
+    },
+    "constraints": {
+      "$ref": "#/$defs/Constraints"
+    },
+    "callback_url": {
+      "title": "Callback Url",
+      "type": "string"
+    },
+    "attempt": {
+      "default": 1,
+      "title": "Attempt",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "task_id",
+    "project_id",
+    "agent_id",
+    "role",
+    "action",
+    "instruction",
+    "callback_url"
+  ],
+  "title": "DispatchRequest",
+  "type": "object"
+}
