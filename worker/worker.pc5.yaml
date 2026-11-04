@@ -4,10 +4,10 @@
 
 worker_id: "worker-pc5"
 machine_id: "PC5"
-control_url: "http://192.168.1.101:8000"
+control_url: "http://192.168.1.33:8000"
 secret: "worker_pc5_secret_token_change_me"
 listen_host: "0.0.0.0"
-listen_port: 8000
+listen_port: 8001
 contract_version: "1.3.0"
 worker_version: "1.0.0"
 heartbeat_interval_seconds: 10
