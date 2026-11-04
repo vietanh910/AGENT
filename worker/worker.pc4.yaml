@@ -1,10 +1,12 @@
 # =============================================================================
-# Cấu hình Worker Host PC4 (DEV & TESTER)
+# Cấu hình Worker Host PC4 (BA & DBA)
+# IP: 26.222.181.101 | Port: 8001
+# Control PC1: 26.105.63.241:8000
 # =============================================================================
 
 worker_id: "worker-pc4"
 machine_id: "PC4"
-control_url: "http://192.168.1.33:8000"
+control_url: "http://26.105.63.241:8000"
 secret: "worker_pc4_secret_token_change_me"
 listen_host: "0.0.0.0"
 listen_port: 8001
@@ -14,23 +16,23 @@ heartbeat_interval_seconds: 10
 outbox_db_path: "worker/data/outbox_pc4.db"
 
 agents:
-  - agent_id: "dev-01"
-    role: "DEV"
-    name: "Developer Agent"
+  - agent_id: "ba-01"
+    role: "BA"
+    name: "Business Analyst Agent"
     version: "1.0.0"
-    path: "agents/dev"
+    path: "agents/ba"
     capabilities:
-      - "implement_project"
-      - "implement_feature"
-      - "git_workspace"
-      - "code_implementation"
-  - agent_id: "tester-01"
-    role: "TESTER"
-    name: "Software Tester Agent"
+      - "write_requirements"
+      - "write_user_stories"
+      - "acceptance_criteria"
+      - "requirements_analysis"
+  - agent_id: "dba-01"
+    role: "DBA"
+    name: "Database Administrator Agent"
     version: "1.0.0"
-    path: "agents/tester"
+    path: "agents/dba"
     capabilities:
-      - "create_test_cases"
-      - "run_test_suite"
-      - "pytest_execution"
-      - "verdict_reporting"
+      - "design_schema"
+      - "schema_design"
+      - "migration_generation"
+      - "query_optimization"

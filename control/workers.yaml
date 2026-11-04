@@ -1,32 +1,37 @@
 # =============================================================================
-# Cấu hình danh sách Worker và Secret xác thực Bearer Token cho PC2..PC5 (Local)
+# Cấu hình danh sách Worker và Secret xác thực Bearer Token cho PC2..PC5 (Radmin VPN LAN)
+# PC1: 26.105.63.241 (Control Node)
 # =============================================================================
 
 workers:
   worker-pc2:
     machine_id: "PC2"
+    base_url: "http://26.28.90.248:8001"
     secret: "worker_pc2_secret_token_change_me"
     allowed_agents:
-      - "sa-01"
-      - "dba-01"
+      - "dev-01"
+      - "scrum_master-01"
 
   worker-pc3:
     machine_id: "PC3"
+    base_url: "http://26.53.120.228:8001"
     secret: "worker_pc3_secret_token_change_me"
     allowed_agents:
-      - "ba-01"
       - "po-01"
+      - "sa-01"
 
   worker-pc4:
     machine_id: "PC4"
+    base_url: "http://26.222.181.101:8001"
     secret: "worker_pc4_secret_token_change_me"
     allowed_agents:
-      - "dev-01"
-      - "tester-01"
+      - "ba-01"
+      - "dba-01"
 
   worker-pc5:
     machine_id: "PC5"
+    base_url: "http://26.134.25.163:8001"
     secret: "worker_pc5_secret_token_change_me"
     allowed_agents:
-      - "scrum_master-01"
+      - "tester-01"
       - "security-01"

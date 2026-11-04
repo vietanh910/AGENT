@@ -1,30 +1,29 @@
 # =============================================================================
-# Cấu hình mẫu Worker Host PC5 (SCRUM_MASTER & SECURITY)
-# Sao chép thành worker.yaml trên PC5 và cập nhật IP của PC1 nếu cần.
+# Cấu hình mẫu Worker Host PC5 (TESTER & SECURITY)
 # =============================================================================
 
 worker_id: "worker-pc5"
 machine_id: "PC5"
-control_url: "http://192.168.1.101:8000"
+control_url: "http://26.105.63.241:8000"
 secret: "worker_pc5_secret_token_change_me"
 listen_host: "0.0.0.0"
-listen_port: 8000
+listen_port: 8001
 contract_version: "1.3.0"
 worker_version: "1.0.0"
 heartbeat_interval_seconds: 10
 outbox_db_path: "worker/data/outbox_pc5.db"
 
 agents:
-  - agent_id: "scrum_master-01"
-    role: "SCRUM_MASTER"
-    name: "Scrum Master Agent"
+  - agent_id: "tester-01"
+    role: "TESTER"
+    name: "Software Tester Agent"
     version: "1.0.0"
-    path: "agents/scrum_master"
+    path: "agents/tester"
     capabilities:
-      - "run_sprint_review"
-      - "run_retrospective"
-      - "velocity_tracking"
-      - "continuous_improvement"
+      - "create_test_cases"
+      - "run_test_suite"
+      - "pytest_execution"
+      - "verdict_reporting"
   - agent_id: "security-01"
     role: "SECURITY"
     name: "Security Reviewer Agent"

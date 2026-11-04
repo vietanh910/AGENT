@@ -323,7 +323,7 @@ class TestTaskResultSecurityIsolation:
         run_id = f"RUN-SEC-{uuid.uuid4().hex[:6]}"
         task_id = f"{run_id}-DEV-TASK"
 
-        # Tạo 1 task giao cho dev-01 (thuộc worker-pc4)
+        # Tạo 1 task giao cho ba-01 (thuộc worker-pc4)
         with get_db_session() as session:
             WorkflowRunRepository.create_run(
                 session,
@@ -334,21 +334,21 @@ class TestTaskResultSecurityIsolation:
                 {
                     "task_id": task_id,
                     "run_id": run_id,
-                    "agent_id": "dev-01",  # Thuộc worker-pc4!
-                    "role": "DEV",
-                    "action": "implement_feature",
-                    "instruction": "Implement code",
+                    "agent_id": "ba-01",  # Thuộc worker-pc4!
+                    "role": "BA",
+                    "action": "write_requirements",
+                    "instruction": "Write requirements",
                 },
             )
             session.commit()
 
-        # Worker PC2 (chỉ quản lý sa-01, dba-01) cố tình nộp kết quả cho task của dev-01!
+        # Worker PC2 (chỉ quản lý dev-01, scrum_master-01) cố tình nộp kết quả cho task của ba-01!
         malicious_result = {
             "contract_version": "1.2.0",
             "task_id": task_id,
-            "agent_id": "dev-01",
+            "agent_id": "ba-01",
             "status": "COMPLETED",
-            "summary": "Implement feature completed",
+            "summary": "Requirements completed",
             "outputs": [],
         }
 
@@ -373,7 +373,7 @@ class TestTaskResultSecurityIsolation:
             assert audit.actor == "worker-pc2"
             assert audit.result == "FORBIDDEN_AGENT_MISMATCH"
 
-        # Bây giờ Worker PC4 (chính chủ dev-01) nộp kết quả -> 200 Thành công!
+        # Bây giờ Worker PC4 (chính chủ ba-01) nộp kết quả -> 200 Thành công!
         legit_resp = await async_client.post(
             f"/api/v1/tasks/{task_id}/result",
             headers={"Authorization": f"Bearer {PC4_SECRET}"},  # Token của PC4

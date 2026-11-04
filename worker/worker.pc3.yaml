@@ -1,10 +1,12 @@
 # =============================================================================
-# Cấu hình Worker Host PC3 (BA & PO)
+# Cấu hình Worker Host PC3 (PO & SA)
+# IP: 26.53.120.228 | Port: 8001
+# Control PC1: 26.105.63.241:8000
 # =============================================================================
 
 worker_id: "worker-pc3"
 machine_id: "PC3"
-control_url: "http://192.168.1.33:8000"
+control_url: "http://26.105.63.241:8000"
 secret: "worker_pc3_secret_token_change_me"
 listen_host: "0.0.0.0"
 listen_port: 8001
@@ -14,16 +16,6 @@ heartbeat_interval_seconds: 10
 outbox_db_path: "worker/data/outbox_pc3.db"
 
 agents:
-  - agent_id: "ba-01"
-    role: "BA"
-    name: "Business Analyst Agent"
-    version: "1.0.0"
-    path: "agents/ba"
-    capabilities:
-      - "write_requirements"
-      - "write_user_stories"
-      - "acceptance_criteria"
-      - "requirements_analysis"
   - agent_id: "po-01"
     role: "PO"
     name: "Product Owner Agent"
@@ -34,3 +26,13 @@ agents:
       - "accept_release"
       - "scope_approval"
       - "release_validation"
+  - agent_id: "sa-01"
+    role: "SA"
+    name: "Software Architect Agent"
+    version: "1.0.0"
+    path: "agents/sa"
+    capabilities:
+      - "design_architecture"
+      - "system_architecture"
+      - "tech_stack_selection"
+      - "interface_design"

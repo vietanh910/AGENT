@@ -50,27 +50,27 @@ REPORT_FILE = ROOT_DIR / "docs" / "lan-check-report.md"
 DEFAULT_WORKER_ENDPOINTS = {
     "worker-pc2": {
         "machine_id": "PC2",
-        "url": "http://192.168.1.102:8000",
+        "url": "http://26.28.90.248:8001",
         "secret": "worker_pc2_secret_token_change_me",
-        "expected_agents": ["sa-01", "dba-01"],
+        "expected_agents": ["dev-01", "scrum_master-01"],
     },
     "worker-pc3": {
         "machine_id": "PC3",
-        "url": "http://192.168.1.103:8000",
+        "url": "http://26.53.120.228:8001",
         "secret": "worker_pc3_secret_token_change_me",
-        "expected_agents": ["ba-01", "po-01"],
+        "expected_agents": ["po-01", "sa-01"],
     },
     "worker-pc4": {
         "machine_id": "PC4",
-        "url": "http://192.168.1.104:8000",
+        "url": "http://26.222.181.101:8001",
         "secret": "worker_pc4_secret_token_change_me",
-        "expected_agents": ["dev-01", "tester-01"],
+        "expected_agents": ["ba-01", "dba-01"],
     },
     "worker-pc5": {
         "machine_id": "PC5",
-        "url": "http://192.168.1.105:8000",
+        "url": "http://26.134.25.163:8001",
         "secret": "worker_pc5_secret_token_change_me",
-        "expected_agents": ["scrum_master-01", "security-01"],
+        "expected_agents": ["tester-01", "security-01"],
     },
 }
 
@@ -263,10 +263,10 @@ def generate_markdown_report(results: List[Dict[str, Any]], filepath: Path) -> N
 2. **Độ lệch Thời gian (Clock Skew)**: So sánh đồng hồ nội bộ giữa PC1 và từng Worker. Ngưỡng cảnh báo: $\\Delta t > 2.0s$.
 3. **Tính Tuân thủ Phiên bản Contract**: Đảm bảo tất cả Worker đồng nhất phiên bản `""" + CONTRACT_VERSION + """` để tránh xung đột cấu trúc schema dữ liệu.
 4. **Đăng ký Agent Đúng Vai trò**:
-   - PC2: `sa-01` (SA), `dba-01` (DBA)
-   - PC3: `ba-01` (BA), `po-01` (PO)
-   - PC4: `dev-01` (DEV), `tester-01` (TESTER)
-   - PC5: `scrum_master-01` (SCRUM_MASTER), `security-01` (SECURITY)
+   - PC2: `dev-01` (DEV), `scrum_master-01` (SCRUM_MASTER)
+   - PC3: `po-01` (PO), `sa-01` (SA)
+   - PC4: `ba-01` (BA), `dba-01` (DBA)
+   - PC5: `tester-01` (TESTER), `security-01` (SECURITY)
 5. **Kiểm tra Xác thực Token (Security Probe)**: Gọi endpoint quản trị không mang Bearer token bắt buộc nhận mã trạng thái `HTTP 401 Unauthorized`.
 
 ---
@@ -300,10 +300,10 @@ def run_mock_lan_check() -> Tuple[List[Dict[str, Any]], bool]:
     results = []
 
     configs = [
-        ("worker-pc2", "PC2", "worker_pc2_secret_token_change_me", [("sa-01", "SA"), ("dba-01", "DBA")]),
-        ("worker-pc3", "PC3", "worker_pc3_secret_token_change_me", [("ba-01", "BA"), ("po-01", "PO")]),
-        ("worker-pc4", "PC4", "worker_pc4_secret_token_change_me", [("dev-01", "DEV"), ("tester-01", "TESTER")]),
-        ("worker-pc5", "PC5", "worker_pc5_secret_token_change_me", [("scrum_master-01", "SCRUM_MASTER"), ("security-01", "SECURITY")]),
+        ("worker-pc2", "PC2", "worker_pc2_secret_token_change_me", [("dev-01", "DEV"), ("scrum_master-01", "SCRUM_MASTER")]),
+        ("worker-pc3", "PC3", "worker_pc3_secret_token_change_me", [("po-01", "PO"), ("sa-01", "SA")]),
+        ("worker-pc4", "PC4", "worker_pc4_secret_token_change_me", [("ba-01", "BA"), ("dba-01", "DBA")]),
+        ("worker-pc5", "PC5", "worker_pc5_secret_token_change_me", [("tester-01", "TESTER"), ("security-01", "SECURITY")]),
     ]
 
     for wid, mid, secret, agents_info in configs:
