@@ -149,7 +149,7 @@ class RunTask(BaseModel):
     dispatch_state: DispatchState = DispatchState.QUEUED
     attempts: int = 0
     max_attempts: int = 3
-    timeout_seconds: int = 300
+    timeout_seconds: int = 1000
     deadline: datetime | None = None
     result: TaskResult | None = None
     error: AgentError | None = None

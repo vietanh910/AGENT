@@ -105,7 +105,7 @@ class TaskManager:
             tid = tdata.get("task_id") or tdata.get("id") or f"task-{uuid.uuid4().hex[:10]}"
             role_val = tdata["role"].value if isinstance(tdata["role"], AgentRole) else str(tdata["role"])
             agent_id = tdata.get("agent_id") or cls.resolve_agent_id_for_role(role_val)
-            timeout = tdata.get("timeout_seconds", 300)
+            timeout = tdata.get("timeout_seconds", 1000)
 
             task_payload = {
                 "task_id": tid,

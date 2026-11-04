@@ -45,7 +45,7 @@ tasks:
     output_artifact_type: "BACKLOG"
     priority: 1
     max_attempts: 3
-    timeout_seconds: 300
+    timeout_seconds: 1000
     acceptance_criteria_template:
       - "Xác định rõ ràng mục tiêu cốt lõi của sản phẩm phần mềm"
       - "Liệt kê danh sách các tính năng chính kèm mức độ ưu tiên (Must/Should/Could)"
@@ -63,7 +63,7 @@ tasks:
     output_artifact_type: "REQUIREMENT"
     priority: 1
     max_attempts: 3
-    timeout_seconds: 300
+    timeout_seconds: 1000
     acceptance_criteria_template:
       - "Đầy đủ các yêu cầu chức năng (FR) và phi chức năng (NFR)"
       - "Nêu rõ các ràng buộc kỹ thuật, giả định và phạm vi ranh giới"
@@ -81,7 +81,7 @@ tasks:
     output_artifact_type: "USER_STORY"
     priority: 1
     max_attempts: 3
-    timeout_seconds: 300
+    timeout_seconds: 1000
     acceptance_criteria_template:
       - "Mỗi user story có id (US-xx), title, định dạng As a / I want / So that"
       - "Kèm theo Acceptance Criteria rõ ràng và có thể kiểm thử độc lập"
@@ -115,7 +115,7 @@ tasks:
     output_artifact_type: "ARCHITECTURE"
     priority: 2
     max_attempts: 3
-    timeout_seconds: 300
+    timeout_seconds: 1000
     acceptance_criteria_template:
       - "Sơ đồ kiến trúc thành phần (Frontend, Backend, DB, Network)"
       - "Quy chuẩn công nghệ, thư viện, mô hình bảo mật và mở rộng"
@@ -133,7 +133,7 @@ tasks:
     output_artifact_type: "DATABASE_SCHEMA"
     priority: 2
     max_attempts: 3
-    timeout_seconds: 300
+    timeout_seconds: 1000
     acceptance_criteria_template:
       - "Lược đồ cơ sở dữ liệu chuẩn hóa (ít nhất 3NF)"
       - "Đầy đủ DDL SQL tạo bảng và chỉ mục tối ưu truy vấn"
@@ -151,7 +151,7 @@ tasks:
     output_artifact_type: "TEST_CASE"
     priority: 2
     max_attempts: 3
-    timeout_seconds: 300
+    timeout_seconds: 1000
     acceptance_criteria_template:
       - "Bao phủ 100% các Acceptance Criteria của User Stories"
       - "Có các ca kiểm thử tích cực (happy path) và tiêu cực (edge cases)"
@@ -189,7 +189,7 @@ tasks:
     output_artifact_type: "SECURITY_REPORT"
     priority: 2
     max_attempts: 3
-    timeout_seconds: 300
+    timeout_seconds: 1000
     acceptance_criteria_template:
       - "Không chứa lỗ hổng bảo mật mức độ CRITICAL hoặc HIGH chưa được xử lý"
       - "Báo cáo rõ các điểm phát hiện và khuyến nghị khắc phục"
@@ -207,7 +207,7 @@ tasks:
     output_artifact_type: "DEPLOYMENT"
     priority: 3
     max_attempts: 3
-    timeout_seconds: 300
+    timeout_seconds: 1000
     acceptance_criteria_template:
       - "Dockerfile đa tầng (multi-stage) tối ưu kích thước image"
       - "Cấu hình build CI không chứa bí mật"
@@ -292,7 +292,7 @@ tasks:
     output_artifact_type: "DOCUMENTATION"
     priority: 4
     max_attempts: 3
-    timeout_seconds: 300
+    timeout_seconds: 1000
     acceptance_criteria_template:
       - "Xác nhận sản phẩm đáp ứng đầy đủ tiêu chí chấp nhận của Backlog ban đầu"
       - "Ký biên bản nghiệm thu bản phát hành RELEASE"
@@ -309,7 +309,7 @@ tasks:
     output_artifact_type: "DOCUMENTATION"
     priority: 4
     max_attempts: 3
-    timeout_seconds: 300
+    timeout_seconds: 1000
     acceptance_criteria_template:
       - "Tổng hợp các điểm mạnh, điểm nghẽn và cải tiến cho các đợt phát triển tiếp theo"
       - "Xuất tài liệu hồi tưởng dự án"
@@ -326,7 +326,7 @@ tasks:
     output_artifact_type: "DOCUMENTATION"
     priority: 4
     max_attempts: 3
-    timeout_seconds: 300
+    timeout_seconds: 1000
     acceptance_criteria_template:
       - "Báo cáo đầy đủ 4 phần chuẩn: đã hoàn thành, đang xử lý, bị chặn, việc tiếp theo"
       - "Gắn kèm đường dẫn toàn bộ các artifact và liên kết GitHub, Linear"

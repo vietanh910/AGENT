@@ -47,7 +47,7 @@ def execute_step(
     action: str,
     instruction: str,
     payload_extra: dict = None,
-    timeout: float = 300.0,
+    timeout: float = 1000.0,
     allow_fallback: bool = True,
 ) -> dict:
     endpoints = load_endpoints()
@@ -135,7 +135,7 @@ def main():
     r1 = execute_step(
         1, "Lập kế hoạch & phân rã dự án", "pm-01", "PM", "create_plan",
         f"Lập kế hoạch phân bổ milestone và sprint cho dự án: {brief}",
-        timeout=300.0,
+        timeout=1000.0,
     )
     results.append(("PM", "Lập kế hoạch", "PC1 (127.0.0.1)", r1.get("status", "DONE")))
 
@@ -143,7 +143,7 @@ def main():
     r2 = execute_step(
         2, "Xác định Product Backlog", "po-01", "PO", "manage_backlog",
         f"Định nghĩa danh sách tính năng và độ ưu tiên Backlog: {brief}",
-        timeout=300.0,
+        timeout=1000.0,
     )
     results.append(("PO", "Product Backlog", "PC3 (26.53.120.228)", r2.get("status", "DONE")))
 
@@ -152,7 +152,7 @@ def main():
         3, "Phân tích đặc tả yêu cầu (SRS)", "ba-01", "BA", "ANALYZE_REQUIREMENTS",
         f"Phân tích yêu cầu và xuất tài liệu đặc tả SRS: {brief}",
         payload_extra={"description": brief},
-        timeout=300.0,
+        timeout=1000.0,
     )
     results.append(("BA", "Đặc tả SRS.md", "PC4 (26.222.181.101)", r3.get("status", "DONE")))
 
@@ -160,7 +160,7 @@ def main():
     r4 = execute_step(
         4, "Thiết kế kiến trúc hệ thống", "sa-01", "SA", "design_architecture",
         "Thiết kế kiến trúc microservices 3 tầng cho Todo App (FastAPI + React + MySQL/PostgreSQL)",
-        timeout=300.0,
+        timeout=1000.0,
     )
     results.append(("SA", "Kiến trúc hệ thống", "PC3 (26.53.120.228)", r4.get("status", "DONE")))
 
@@ -169,7 +169,7 @@ def main():
         5, "Thiết kế Database Schema DDL", "dba-01", "DBA", "DESIGN_DATABASE",
         "Thiết kế Schema CSDL Todo App gồm các bảng users, categories, tasks, tags, audit_logs",
         payload_extra={"requirements": "Cac bang: users(id, username), tasks(id, user_id, title, status, deadline)"},
-        timeout=300.0,
+        timeout=1000.0,
     )
     results.append(("DBA", "Schema DDL (schema.sql)", "PC4 (26.222.181.101)", r5.get("status", "DONE")))
 
@@ -178,7 +178,7 @@ def main():
         6, "Lập trình hiện thực hóa tính năng & sửa lỗi", "dev-01", "DEV", "fix_bugs",
         "Lập trình module CRUD Todo API với FastAPI và Pydantic, xử lý lỗi bảo mật",
         payload_extra={"feature": "todo_api"},
-        timeout=300.0,
+        timeout=1000.0,
     )
     results.append(("DEV", "Mã nguồn tính năng", "PC2 (26.28.90.248)", r6.get("status", "DONE")))
 
@@ -186,7 +186,7 @@ def main():
     r7 = execute_step(
         7, "Xây dựng kịch bản kiểm thử", "tester-01", "TESTER", "create_test_cases",
         "Tạo bộ test cases kiểm thử tự động API tạo todo, sửa todo, xóa todo",
-        timeout=300.0,
+        timeout=1000.0,
     )
     results.append(("TESTER", "Bộ Test Cases", "PC5 (26.134.25.163)", r7.get("status", "DONE")))
 
@@ -207,7 +207,7 @@ def main():
                 }
             ]
         },
-        timeout=300.0,
+        timeout=1000.0,
     )
     results.append(("SECURITY", "Báo cáo an toàn thông tin", "PC5 (26.134.25.163)", r8.get("status", "DONE")))
 
@@ -215,7 +215,7 @@ def main():
     r9 = execute_step(
         9, "Tạo CI/CD & Triển khai Staging", "devops-01", "DEVOPS", "deploy",
         "Đóng gói Dockerfile, tạo file cấu hình docker-compose và triển khai môi trường Staging",
-        timeout=300.0,
+        timeout=1000.0,
     )
     results.append(("DEVOPS", "Triển khai Staging", "PC1 (127.0.0.1)", r9.get("status", "DONE")))
 
@@ -223,7 +223,7 @@ def main():
     r10 = execute_step(
         10, "Tổng kết Sprint Retrospective", "scrum_master-01", "SCRUM_MASTER", "run_retrospective",
         "Tổ chức tổng kết bài học kinh nghiệm, vận tốc nhóm (velocity) và cải tiến quy trình",
-        timeout=300.0,
+        timeout=1000.0,
     )
     results.append(("SCRUM MASTER", "Sprint Retrospective", "PC2 (26.28.90.248)", r10.get("status", "DONE")))
 

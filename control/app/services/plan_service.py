@@ -100,7 +100,7 @@ def build_default_plan(brief: str, project_id: str) -> Dict[str, Any]:
         output_art = t.get("output_artifact_type")
         priority = t.get("priority", 1)
         max_attempts = t.get("max_attempts", 3)
-        timeout = t.get("timeout_seconds", 300)
+        timeout = t.get("timeout_seconds", 1000)
         criteria = list(t.get("acceptance_criteria_template", ["Đạt tiêu chuẩn kỹ thuật bàn giao"]))
 
         built_tasks.append({
@@ -595,7 +595,7 @@ class PlanService:
                 "output_artifact_type": "TEST_REPORT",
                 "priority": 2,
                 "max_attempts": 3,
-                "timeout_seconds": 300,
+                "timeout_seconds": 1000,
                 "acceptance_criteria": [f"100% test cases Sprint {sprint_idx} PASS", "Không phát hiện lỗi hồi quy"],
                 "context": {"sprint": sprint_idx},
             })
@@ -615,7 +615,7 @@ class PlanService:
                 "output_artifact_type": "DOCUMENTATION",
                 "priority": 2,
                 "max_attempts": 3,
-                "timeout_seconds": 300,
+                "timeout_seconds": 1000,
                 "acceptance_criteria": [f"Nghiệm thu toàn bộ stories của Sprint {sprint_idx}", "Cập nhật tiến độ backlog"],
                 "context": {"sprint": sprint_idx},
             })

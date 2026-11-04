@@ -65,7 +65,7 @@ def main():
             ]
         },
         "input_artifacts": [],
-        "constraints": {"timeout_seconds": 300},
+        "constraints": {"timeout_seconds": 1000},
     }
 
     print("\n[1] >>> GỬI ĐI LỆNH (REQUEST) TỚI SCRUM MASTER AGENT (PC2):")
@@ -74,12 +74,12 @@ def main():
     print(f"  • Action:          {payload['action']}")
     print(f"  • Task ID:         {task_id}")
     print(f"  • Yêu cầu họp:     {instruction[:140]}...")
-    print(f"  • Timeout tối đa:  300 giây")
+    print(f"  • Timeout tối đa:  1000 giây")
 
     t0 = time.time()
     try:
         print("\n[*] Đang gửi yêu cầu và chờ Scrum Master (PC2) xử lý qua Radmin VPN...")
-        with httpx.Client(timeout=300.0) as client:
+        with httpx.Client(timeout=1000.0) as client:
             res = client.post(f"{SM_URL}/tasks", json=payload, headers=headers)
             duration_ms = int((time.time() - t0) * 1000)
 

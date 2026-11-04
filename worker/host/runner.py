@@ -336,7 +336,7 @@ class AgentRunner:
     def _run_task_thread(self, request: DispatchRequest) -> None:
         """Vòng lặp thực thi task trong thread độc lập."""
         task_id = request.task_id
-        timeout_seconds = request.constraints.timeout_seconds if request.constraints else 300
+        timeout_seconds = request.constraints.timeout_seconds if request.constraints else 1000
         logger.info(f"Agent '{self.agent_id}' bắt đầu xử lý task '{task_id}' (action={request.action}, timeout={timeout_seconds}s).")
 
         result: Optional[TaskResult] = None

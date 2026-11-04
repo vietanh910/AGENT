@@ -84,7 +84,7 @@ class Constraints(BaseModel):
     """Các ràng buộc về thời hạn, ưu tiên và timeout của tác vụ."""
     deadline: datetime | None = None
     priority: Priority = Priority.MEDIUM
-    timeout_seconds: int = 300
+    timeout_seconds: int = 1000
 
 
 class TaskRequest(BaseModel):

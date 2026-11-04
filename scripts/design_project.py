@@ -4,7 +4,7 @@
 Quy trình:
 1. Ping kiểm tra sẵn sàng toàn bộ 10 Agent trên 5 máy (PC1..PC5) trước khi chạy.
 2. Hiển thị minh bạch lệnh gửi đi (Request) và phản hồi nhận về (Response) từ mỗi Agent.
-3. Hỗ trợ Timeout 300s cho các tác vụ LLM sâu.
+3. Hỗ trợ Timeout 1000s cho các tác vụ LLM sâu.
 4. Tự động thu thập toàn bộ sản phẩm (Artifacts) vào thư mục deliverables/<slug>.
 5. Sinh mã nguồn ứng dụng hoàn chỉnh, đơn giản và chạy được ngay (FastAPI + Web UI).
 6. Đồng bộ toàn bộ quy trình lên Linear: Tạo Project, các Module (Parent Tasks) với ít nhất 5 Subtasks/module.
@@ -143,7 +143,7 @@ def call_agent_step(
     instruction: str,
     project_name: str,
     payload_extra: dict = None,
-    timeout: float = 300.0,
+    timeout: float = 1000.0,
 ) -> Tuple[Dict[str, Any], bool]:
     """Gửi yêu cầu thực thi tới Agent và in toàn bộ thông số gửi/nhận rõ ràng."""
     task_id = f"TASK-{step_num:02d}-{agent_id.upper()}-{uuid.uuid4().hex[:6]}"
@@ -772,7 +772,7 @@ def linear_update_on_done(linear_ctx: Optional[dict], step_num: int, role: str, 
 def main():
     parser = argparse.ArgumentParser(description="Chạy thiết kế dự án toàn diện qua 10 Agent và đồng bộ Linear trực tiếp.")
     parser.add_argument("prompt", nargs="?", default="", help="Mô tả ý tưởng dự án cần thiết kế")
-    parser.add_argument("--timeout", type=float, default=300.0, help="Thời gian chờ tối đa cho mỗi Agent (mặc định: 300 giây)")
+    parser.add_argument("--timeout", type=float, default=1000.0, help="Thời gian chờ tối đa cho mỗi Agent (mặc định: 1000 giây)")
     args = parser.parse_args()
 
     project_prompt = args.prompt.strip()
