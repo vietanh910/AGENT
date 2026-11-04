@@ -83,7 +83,12 @@ class BaseAgent:
     ) -> None:
         self.identity = identity
         self.config = config
-        self.llm = llm or LLMClient(config=config, mock=True)
+        is_mock = (
+            config.llm_provider.lower().strip() == "mock"
+            or not config.llm_api_key.strip()
+            or "placeholder" in config.llm_api_key.lower()
+        )
+        self.llm = llm or LLMClient(config=config, mock=is_mock)
         self._current_task: str | None = None
         self._actions: dict[str, tuple[Callable, type[BaseModel] | None, str | None]] = {}
         self._scan_and_register_actions()

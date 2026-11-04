@@ -172,7 +172,12 @@ class PlanService:
             from agents.pm.config import PMConfig
             from schemas import ProjectPlan
 
-            config = PMConfig(llm_mock=True)
+            config = PMConfig()
+            if settings.LLM_API_KEY and "placeholder" not in settings.LLM_API_KEY.lower():
+                config.llm_provider = settings.LLM_PROVIDER
+                config.llm_model = settings.LLM_MODEL
+                config.llm_api_key = settings.LLM_API_KEY
+                config.llm_base_url = settings.LLM_BASE_URL
             pm = PMAgent(config)
 
             request = TaskRequest(
