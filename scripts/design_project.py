@@ -1364,6 +1364,46 @@ def main():
         if step_num in [3, 5]:
             download_all_agent_docs(url=url, token=token, target_dir=project_dir, agent_role=role)
 
+        # Tự động xuất Dockerfile và docker-compose.yml khi DEVOPS hoàn thành bước 10
+        if step_num == 10:
+            df_content = (
+                "# =============================================================================\n"
+                "# DOCKERFILE CHO DỰ ÁN\n"
+                "# Sinh bởi DEVOPS Agent (devops-01) - Môi trường Staging / Production\n"
+                "# =============================================================================\n"
+                "FROM python:3.11-slim\n\n"
+                "WORKDIR /app\n\n"
+                "# Cài đặt dependencies\n"
+                "COPY src/requirements.txt .\n"
+                "RUN pip install --no-cache-dir -r requirements.txt\n\n"
+                "# Sao chép mã nguồn ứng dụng\n"
+                "COPY src/ /app/\n\n"
+                "# Expose port\n"
+                "EXPOSE 8000\n\n"
+                "# Khởi chạy ứng dụng Web & API\n"
+                "CMD [\"python\", \"app.py\"]\n"
+            )
+            dc_content = (
+                "version: '3.8'\n\n"
+                "services:\n"
+                "  app:\n"
+                "    build:\n"
+                "      context: .\n"
+                "      dockerfile: Dockerfile\n"
+                f"    container_name: {slug}_service\n"
+                "    ports:\n"
+                "      - '8000:8000'\n"
+                "    environment:\n"
+                "      - APP_ENV=staging\n"
+                "      - PORT=8000\n"
+                "    restart: unless-stopped\n"
+            )
+            (project_dir / "Dockerfile").write_text(df_content, encoding="utf-8")
+            (project_dir / "docker-compose.yml").write_text(dc_content, encoding="utf-8")
+            print(f"  [DEVOPS] 🐳 Đã khởi tạo cấu hình Docker hoàn chỉnh:")
+            print(f"    • {project_dir / 'Dockerfile'}")
+            print(f"    • {project_dir / 'docker-compose.yml'}")
+
         size_str = f"{os.path.getsize(file_path)} B" if file_path.exists() else "0 B"
         duration_s = res_data.get("_duration_s", 1.0)
         summary_text = res_data.get("summary")
