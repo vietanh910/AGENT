@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hello World - AI Team Multi-Agent System</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: grid; place-items: center;
+      padding: 24px; font-family: system-ui, sans-serif; color: #f1f5ff;
+      background: radial-gradient(ellipse at top left, #263b80, transparent 65%),
+                  radial-gradient(ellipse at bottom right, #62308a, transparent 60%), #0b1025;
+    }
+    main {
+      width: min(760px, 100%); padding: clamp(28px, 7vw, 64px);
+      text-align: center; background: #151e3ee6; border: 1px solid #8299e655;
+      border-radius: 28px; box-shadow: 0 24px 80px #0005;
+      animation: arrive 800ms ease-out;
+    }
+    .badge { display: inline-block; padding: 8px 16px; border-radius: 99px;
+      background: #74e3cc18; color: #91f6de; font-size: 14px; }
+    .wave { font-size: 64px; margin: 28px 0 12px; animation: float 3s ease-in-out infinite; }
+    h1 { font-size: clamp(30px, 6vw, 52px); line-height: 1.18; margin: 16px 0; overflow-wrap: anywhere; }
+    p { color: #c3cee9; line-height: 1.7; }
+    button { margin-top: 18px; padding: 14px 24px; border: 0; border-radius: 12px;
+      background: #9bf1df; color: #102c34; font: inherit; font-weight: 700; cursor: pointer;
+      transition: transform 180ms, background 180ms; }
+    button:hover { background: #c2fff1; transform: translateY(-2px); }
+    button:focus-visible { outline: 3px solid white; outline-offset: 5px; }
+    #message { min-height: 3.4em; margin-bottom: 0; }
+    footer { margin-top: 26px; color: #9caed3; font-size: 13px; }
+    @keyframes arrive { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes float { 50% { transform: translateY(-8px) rotate(8deg); } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+  </style>
+</head>
+<body>
+  <main>
+    <span class="badge">✦ Cùng kết nối, cùng sáng tạo</span>
+    <div class="wave" aria-hidden="true">👋</div>
+    <h1>Hello World - AI Team Multi-Agent System</h1>
+    <p>Một lời chào nhỏ, khởi đầu cho những ý tưởng lớn.<br>Chào mừng bạn đến với đội ngũ AI đa tác tử!</p>
+    <button id="greet" type="button">Gửi lời chào ✨</button>
+    <p id="message" role="status" aria-live="polite">Sẵn sàng khám phá cùng AI Team.</p>
+    <footer>Agent DEV · PC2 · Python &amp; Web</footer>
+  </main>
+  <script>
+    document.getElementById('greet').addEventListener('click', function () {
+      document.getElementById('message').textContent = 'Xin chào bạn! AI Team chúc bạn một ngày đầy cảm hứng! 🎉';
+    });
+  </script>
+</body>
+</html>
