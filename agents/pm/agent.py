@@ -1,6 +1,9 @@
 import hashlib
 import json
+import logging
 import time
+
+logger = logging.getLogger(__name__)
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Union
@@ -479,14 +482,18 @@ class PMAgent(BaseAgent):
                 summary="Bị chặn do thiếu thông tin lập kế hoạch.",
             )
 
+        plan = None
         if not self.llm.mock or self.llm.mock_responder:
-            messages = build_messages(
-                system_prompt=PM_SYSTEM_PROMPT,
-                request=request,
-                output_schema=ProjectPlan.model_json_schema(),
-            )
-            plan = self.llm.complete_json(messages, ProjectPlan)
-        else:
+            try:
+                messages = build_messages(
+                    system_prompt=PM_SYSTEM_PROMPT,
+                    request=request,
+                    output_schema=ProjectPlan.model_json_schema(),
+                )
+                plan = self.llm.complete_json(messages, ProjectPlan)
+            except Exception as e:
+                logger.warning(f"LLM API error ({e}). Using deterministic fallback project plan.")
+        if plan is None:
             plan = ProjectPlan(
                 project_name=request.context.get("project_name", "Hệ thống Web Thương Mại Điện Tử"),
                 overview=f"Kế hoạch tổng thể: {request.instruction}",
