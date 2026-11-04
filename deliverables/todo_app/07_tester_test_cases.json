@@ -1,0 +1,33 @@
+{
+  "summary": "Sinh 2 test case (offline, không dùng LLM).",
+  "test_cases": [
+    {
+      "id": "TC-001",
+      "title": "Kiểm tra: Tạo bộ test cases kiểm thử tự động API tạo todo, sửa todo, xóa todo",
+      "user_story": "Tạo bộ test cases kiểm thử tự động API tạo todo, sửa todo, xóa todo",
+      "type": "functional",
+      "priority": "MEDIUM",
+      "preconditions": [],
+      "steps": [
+        "Chuẩn bị dữ liệu hợp lệ",
+        "Thực hiện thao tác theo tiêu chí",
+        "Quan sát kết quả"
+      ],
+      "expected_result": "Tạo bộ test cases kiểm thử tự động API tạo todo, sửa todo, xóa todo",
+      "automatable": true
+    },
+    {
+      "id": "TC-002",
+      "title": "Dữ liệu đầu vào không hợp lệ bị từ chối",
+      "user_story": "",
+      "type": "negative",
+      "priority": "MEDIUM",
+      "preconditions": [],
+      "steps": [
+        "Gửi dữ liệu rỗng / sai định dạng"
+      ],
+      "expected_result": "Hệ thống trả lỗi validation, không crash",
+      "automatable": true
+    }
+  ]
+}

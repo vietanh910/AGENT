@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Action Lab</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header><a class="brand" href="./index.html">◈ Action Lab</a><span class="badge">LOCAL WORKSPACE</span></header>
+    <section class="intro"><p class="eyebrow">A SIMPLE CHECK, A CLEAR RESULT</p><h1>Put your action to the test.</h1><p>Run a local demo action and track what happened. Everything stays in your browser.</p></section>
+    <section class="panel" aria-labelledby="action-heading">
+      <div class="panel-heading"><div><p class="eyebrow">READY WHEN YOU ARE</p><h2 id="action-heading">Test action</h2></div><span id="status" class="status">Ready</span></div>
+      <form id="action-form">
+        <label for="action-name">Action name</label><input id="action-name" name="name" maxlength="80" value="My first action" required autocomplete="off">
+        <label for="outcome">Demo outcome</label><select id="outcome" name="outcome"><option value="success">Successful action</option><option value="failure">Failed action</option></select>
+        <p class="hint">Simulates a local action. No network requests or external changes.</p>
+        <button id="run" type="submit">Run test <span aria-hidden="true">↗</span></button>
+      </form>
+      <div id="result" class="result" role="status" aria-live="polite">Your result will appear here after running a test.</div>
+    </section>
+    <section class="history" aria-labelledby="history-heading"><div class="history-heading"><h2 id="history-heading">Recent activity</h2><button id="clear" class="text-button" type="button" disabled>Clear history</button></div><p id="storage-note" class="hint" hidden>Browser storage is unavailable. History is kept for this session only.</p><ul id="history-list"></ul><p id="empty" class="empty">No tests yet. Run your first action above.</p></section>
+    <footer>A little more confidence in every action.</footer>
+  </main>
+</body>
+</html>
