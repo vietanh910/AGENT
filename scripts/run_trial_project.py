@@ -48,7 +48,7 @@ def execute_step(
     instruction: str,
     payload_extra: dict = None,
     timeout: float = 1000.0,
-    allow_fallback: bool = True,
+    allow_fallback: bool = False,
 ) -> dict:
     endpoints = load_endpoints()
     url = endpoints.get(agent_id)
@@ -103,18 +103,20 @@ def execute_step(
                         return {"status": "COMPLETED", "summary": f"Fallback simulated for {step_name}"}
                     return data
             else:
-                print(f"[!] Lỗi HTTP {res.status_code} ({latency}ms): {res.text[:150]}")
+                print(f"❌ [LỖI DỪNG HỆ THỐNG] Lỗi HTTP {res.status_code} ({latency}ms): {res.text[:150]}")
                 if allow_fallback:
                     print(f"[*] Kích hoạt fallback xử lý bước {step_name} để tiếp tục pipeline...")
                     return {"status": "COMPLETED", "summary": f"Fallback simulated for {step_name}"}
-                return {}
+                print(f"[!] Dừng toàn bộ hệ thống do Agent '{agent_id}' trả về lỗi HTTP {res.status_code}.")
+                sys.exit(1)
     except Exception as e:
         latency = int((time.time() - t0) * 1000)
-        print(f"[!] Ngoại lệ kết nối ({latency}ms): {e}")
+        print(f"❌ [LỖI DỪNG HỆ THỐNG] Ngoại lệ kết nối tới Agent '{agent_id}' ({latency}ms): {e}")
         if allow_fallback:
             print(f"[*] Kích hoạt fallback xử lý bước {step_name} để tiếp tục pipeline...")
             return {"status": "COMPLETED", "summary": f"Fallback simulated for {step_name}"}
-        return {}
+        print(f"[!] Dừng toàn bộ hệ thống do không thể kết nối tới Agent '{agent_id}' ({url}).")
+        sys.exit(1)
 
 
 def main():

@@ -128,6 +128,26 @@ def ping_agents() -> List[Dict[str, Any]]:
             })
 
     print("=" * 105)
+
+    # KIỂM TRA ĐỘ SẴN SÀNG TOÀN DIỆN: NẾU BẤT KỲ AGENT NÀO KHÔNG KẾT NỐI ĐƯỢC -> BÁO LỖI VÀ DỪNG NGAY
+    failed_agents = [a for a in results if a["status"] != "ONLINE" or a["auth"] not in ["PASS", "OK"]]
+    if failed_agents:
+        print("\n" + "!" * 105)
+        print(" ❌ [LỖI DỪNG HỆ THỐNG] PHÁT HIỆN AGENT KHÔNG THỂ KẾT NỐI HOẶC XÁC THỰC THẤT BẠI!")
+        print(" Quy tắc an toàn: Dừng thực thi lập tức khi không kết nối được tới bất kỳ Agent nào trong 10 Agent.")
+        print("!" * 105)
+        for fa in failed_agents:
+            err_reason = "Không phản hồi (OFFLINE)" if fa["status"] != "ONLINE" else f"Lỗi xác thực Token ({fa['auth']})"
+            print(f" • Agent ID: {fa['agent_id']:<16} | Vai trò: {fa['role']:<12} | Máy: {fa['machine']:<22} | Lỗi: {err_reason}")
+            print(f"   -> URL kiểm tra: {fa['url']}")
+        print("\n[!] HÃY KIỂM TRA LẠI:")
+        print(" 1. Mạng Radmin VPN giữa các máy đã thông suốt chưa (Ping IP máy đích).")
+        print(" 2. Tiến trình Agent trên máy tương ứng đã được khởi chạy chưa (python -m uvicorn ...).")
+        print(" 3. Token trong file .env.lan hoặc biến môi trường đã khớp chưa.")
+        print("=" * 105 + "\n")
+        sys.exit(1)
+
+    print("[+] Toàn bộ 10 Agent trên 5 máy đã sẵn sàng và kết nối thành công!\n")
     return results
 
 
@@ -197,16 +217,20 @@ def call_agent_step(
                 if status in ["COMPLETED", "completed", "SUCCESS", "success"]:
                     return data, True
                 else:
-                    print(f"  [!] Phản hồi chưa hoàn tất hoàn toàn, áp dụng cơ chế tự hoàn thiện...")
+                    err_msg = f"Agent phản hồi trạng thái thất bại: '{status}'. Tóm tắt: {summary}"
+                    print(f"  [!] {err_msg}")
+                    data["error"] = err_msg
                     return data, False
             else:
-                print(f"  [!] HTTP {res.status_code}: {res.text[:120]}")
-                return {"_duration_s": time.time() - t0}, False
+                err_msg = f"HTTP {res.status_code}: {res.text[:120]}"
+                print(f"  [!] {err_msg}")
+                return {"_duration_s": duration_s, "error": err_msg}, False
     except Exception as e:
         duration_s = time.time() - t0
         duration_ms = int(duration_s * 1000)
-        print(f"<<< [!] Lỗi kết nối tới {agent_id} sau {duration_ms}ms: {e}")
-        return {"_duration_s": duration_s}, False
+        err_msg = f"Lỗi kết nối ({type(e).__name__}): {e}"
+        print(f"<<< [!] Lỗi kết nối tới {agent_id} sau {duration_ms}ms: {err_msg}")
+        return {"_duration_s": duration_s, "error": err_msg}, False
 
 
 def download_remote_artifact(url: str, token: str, artifact_id: str) -> bytes | None:
@@ -576,6 +600,7 @@ def init_linear_live_workflow(project_name: str, brief: str, steps_config: List[
         todo_state_id = schema.state_name_to_id.get("Todo") or schema.state_name_to_id.get("todo")
         in_progress_state_id = schema.state_name_to_id.get("In Progress") or schema.state_name_to_id.get("in progress")
         done_state_id = schema.state_name_to_id.get("Done") or schema.state_name_to_id.get("done")
+        canceled_state_id = schema.state_name_to_id.get("Canceled") or schema.state_name_to_id.get("canceled")
 
         # 1. Project & Milestone
         run_code = f"RUN-{uuid.uuid4().hex[:6].upper()}"
@@ -685,6 +710,7 @@ def init_linear_live_workflow(project_name: str, brief: str, steps_config: List[
             "todo_state_id": todo_state_id,
             "in_progress_state_id": in_progress_state_id,
             "done_state_id": done_state_id,
+            "canceled_state_id": canceled_state_id,
             "parent1_id": parent1_id,
             "parent2_id": parent2_id,
             "subtasks": subtask_map,
@@ -767,6 +793,33 @@ def linear_update_on_done(linear_ctx: Optional[dict], step_num: int, role: str, 
             print(f"  [LINEAR LIVE] 🏆 Hoàn thành Module 2 (5/5 Subtasks) -> Chuyển Module 2 sang 'DONE'!")
     except Exception as e:
         print(f"  [LINEAR LIVE] [!] Không thể cập nhật Done lên Linear: {e}")
+
+
+def linear_update_on_failure(linear_ctx: Optional[dict], step_num: int, role: str, agent_id: str, machine: str, error_msg: str):
+    """Cập nhật Subtask sang Canceled và ghi comment cảnh báo lỗi lên Linear khi Agent mất kết nối."""
+    if not linear_ctx:
+        return
+    try:
+        tracker = linear_ctx["tracker"]
+        canceled_state = linear_ctx.get("canceled_state_id")
+        sub_info = linear_ctx["subtasks"].get(step_num)
+        if sub_info:
+            sub_id = sub_info["id"]
+            if canceled_state:
+                tracker.set_status(sub_id, canceled_state)
+            now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+            comment_body = (
+                f"❌ **[LỖI KẾT NỐI - DỪNG HỆ THỐNG]**\n\n"
+                f"- **Thời gian:** `{now_str}`\n"
+                f"- **Agent gặp sự cố:** `{agent_id}` (`{role}`)\n"
+                f"- **Máy thực thi:** `{machine}`\n"
+                f"- **Chi tiết lỗi:** `{error_msg}`\n\n"
+                f"> **Hệ thống đã dừng thực thi lập tức theo yêu cầu an toàn.**"
+            )
+            tracker.add_comment(issue_id=sub_id, body=comment_body)
+            print(f"  [LINEAR LIVE] ❌ Đã cập nhật Subtask [{step_num}/10] sang 'CANCELED' trên Linear!")
+    except Exception as e:
+        print(f"  [LINEAR LIVE] [!] Không thể cập nhật lỗi lên Linear: {e}")
 
 
 def main():
@@ -878,6 +931,29 @@ def main():
             payload_extra=extra,
             timeout=args.timeout,
         )
+
+        # NẾU KHÔNG KẾT NỐI ĐƯỢC TỚI AGENT HOẶC AGENT GẶP LỖI -> BÁO LỖI VÀ DỪNG HỆ THỐNG LẬP TỨC
+        if not ok:
+            err_msg = res_data.get("error", "Không thể kết nối hoặc Agent phản hồi thất bại.")
+            print("\n" + "!" * 115)
+            print(f" ❌ [LỖI DỪNG HỆ THỐNG] MẤT KẾT NỐI HOẶC THỰC THI THẤT BẠI TẠI BƯỚC {step_num}/10!")
+            print(f" • Tác vụ:        {step_name}")
+            print(f" • Agent ID:      {agent_id} ({role})")
+            print(f" • Máy thực thi:  {machine}")
+            print(f" • Endpoint URL:  {url}")
+            print(f" • Chi tiết lỗi:  {err_msg}")
+            print(" HỆ THỐNG DỪNG THỰC THI LẬP TỨC THEO QUY ĐỊNH AN TOÀN.")
+            print("!" * 115 + "\n")
+
+            linear_update_on_failure(
+                linear_ctx=linear_ctx,
+                step_num=step_num,
+                role=role,
+                agent_id=agent_id,
+                machine=machine,
+                error_msg=err_msg,
+            )
+            sys.exit(1)
 
         # Xuất artifact tương ứng vào thư mục
         file_path = project_dir / artifact_name
