@@ -361,6 +361,21 @@ def test_managed_change_preserves_upstream_conflict_status(monkeypatch):
     assert response.status_code == 409
 
 
+def test_managed_project_forwards_a_human_display_name(monkeypatch):
+    import project_gateway
+    monkeypatch.setattr(app.state.config, "pm_project_mode", "managed")
+    calls = []
+    def call(config, method, path="", payload=None, resource="runs"):
+        calls.append(payload)
+        return {"run_id": "RUN-RESTAURANT", "project_id": "PRJ-REST"}
+    monkeypatch.setattr(project_gateway, "control_request", call)
+    client = TestClient(app)
+    response = client.post("/projects", json={"brief": "Xây dựng phần mềm nhà hàng", "project_name": "Quản lý nhà hàng", "project_id": "PRJ-REST"},
+        headers={"Authorization": f"Bearer {app.state.config.agent_api_key}"})
+    assert response.status_code == 200
+    assert calls[0]["project_name"] == "Quản lý nhà hàng"
+
+
 @pytest.mark.parametrize("arguments,path", [
     (["change", "LIB", "--request", "Add loan renewal"], "/LIB/changes"),
     (["history", "LIB"], "/LIB/releases"),

@@ -34,6 +34,7 @@ artifact_service = ArtifactStoreService()
 class CreateRunRequest(BaseModel):
     run_id: Optional[str] = Field(None, max_length=24, pattern=r"^[A-Za-z0-9_-]+$")
     project_id: Optional[str] = Field(None, max_length=64, description="ID dự án")
+    project_name: Optional[str] = Field(None, min_length=1, max_length=255, description="Tên dự án hiển thị cho người dùng")
     prompt: Optional[str] = Field(None, description="Yêu cầu từ người dùng")
     brief: Optional[str] = Field(None, description="Mô tả tóm tắt yêu cầu phần mềm")
     plan: Optional[Dict[str, Any]] = None
@@ -158,7 +159,7 @@ def create_run(
             "status": initial_status,
         },
     )
-    session.add(ProjectModel(project_id=project_id, name=(req.plan or {}).get("project_name", project_id),
+    session.add(ProjectModel(project_id=project_id, name=(req.project_name or "").strip() or (req.plan or {}).get("project_name", project_id),
                              root_run_id=run_id, release_counter=0))
 
     AuditRepository.record(

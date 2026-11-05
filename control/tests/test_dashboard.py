@@ -17,7 +17,7 @@ from control.app.api.dependencies import get_current_principal, get_db
 from control.app.config import settings
 from control.app.dashboard_ui import router as ui_router
 from control.app.database.models import (
-    AgentEventModel, AgentModel, ArtifactModel, AuditLogModel, Base, TaskDependencyModel, TaskModel, WorkerModel,
+    AgentEventModel, AgentModel, ArtifactModel, AuditLogModel, Base, ProjectModel, TaskDependencyModel, TaskModel, WorkerModel,
     WorkflowRunModel, utc_now,
 )
 from control.app.services.artifact_store import ArtifactStoreService
@@ -215,9 +215,9 @@ async def test_uploaded_files_record_authenticated_sender_machine_and_agent(dash
 
 @pytest.mark.asyncio
 async def test_stream_transport_sends_sse_without_putting_token_in_url(dashboard, monkeypatch):
-    async def one_snapshot(request, factory, run_id):
+    async def one_snapshot(request, factory, run_id, **kwargs):
         with factory() as session:
-            data = dashboard_snapshot(session, run_id)
+            data = dashboard_snapshot(session, run_id, **kwargs)
         yield f"event: snapshot\ndata: {json.dumps(data)}\n\n"
     monkeypatch.setattr(dashboard_api, "snapshot_stream", one_snapshot)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=dashboard["app"]), base_url="http://test") as client:
@@ -236,15 +236,105 @@ async def test_stream_emits_changed_state_heartbeat_and_recovers_from_database_o
     class Request:
         async def is_disconnected(self):
             return reads >= 4
-    def flaky(session, run_id):
+    def flaky(session, run_id, **kwargs):
         nonlocal reads
         reads += 1
         if reads == 3:
             raise RuntimeError("private database password must not leak")
-        return original(session, run_id)
+        return original(session, run_id, **kwargs)
     monkeypatch.setattr(dashboard_api, "dashboard_snapshot", flaky)
     frames = [frame async for frame in dashboard_api.snapshot_stream(Request(), dashboard["factory"], "RUN-DASH", interval=0)]
     assert "event: snapshot" in frames[0]
     assert frames[1].startswith(": heartbeat")
     assert "event: unavailable" in frames[2] and "password" not in frames[2]
     assert "event: snapshot" in frames[3]  # Same revision must be sent again after recovery.
+
+
+def test_project_picker_groups_runs_and_uses_original_business_name(dashboard):
+    with dashboard["factory"]() as session:
+        root = session.get(WorkflowRunModel, "RUN-DASH")
+        root.project_id = "PRJ-RESTAURANT"
+        root.plan = {"project_name": "PRJ-RESTAURANT"}
+        root.brief = "Tôi muốn xây dựng một hệ thống quản lý nhà hàng, bao gồm quản lý bàn và thực đơn."
+        session.add(WorkflowRunModel(run_id="RUN-RESTAURANT-CHANGE", project_id=root.project_id, status="PLANNING",
+            brief="Thêm chức năng đặt bàn", plan={"project_name": root.project_id}, created_at=utc_now() + timedelta(minutes=1)))
+        session.commit()
+        data = dashboard_snapshot(session, project_id=root.project_id, view="project")
+        project = next(p for p in data["projects"] if p["project_id"] == root.project_id)
+        assert project["name"] == "Quản lý nhà hàng" and project["run_count"] == 2
+        assert len([p for p in data["projects"] if p["project_id"] == root.project_id]) == 1
+        assert {r["project_id"] for r in data["runs"]} == {root.project_id}
+        assert [r["sequence"] for r in data["runs"]] == [2, 1]
+        assert data["selected_run"]["run_id"] == "RUN-RESTAURANT-CHANGE"
+        old = dashboard_snapshot(session, "RUN-DASH", project_id=root.project_id, view="project")
+        assert old["selected_run"]["name"] == "Quản lý nhà hàng"
+        assert {t["task_id"] for t in old["tasks"]} == {"BA-1", "DEV-1", "TEST-1"}
+        session.add(ProjectModel(project_id=root.project_id, name="Nhà hàng An Nhiên", root_run_id=root.run_id))
+        session.commit()
+        assert dashboard_snapshot(session, project_id=root.project_id)["selected_project"]["name"] == "Nhà hàng An Nhiên"
+
+
+def test_project_view_isolates_agents_files_events_and_shared_agent_work(dashboard):
+    with dashboard["factory"]() as session:
+        session.get(TaskModel, "DEV-1").dispatch_state = "QUEUED"
+        session.get(WorkerModel, "worker-4").last_heartbeat_at = utc_now()
+        session.add(TaskModel(task_id="OTHER-DEV", run_id="RUN-OTHER", agent_id="dev-01", role="DEV", action="implement_feature",
+            instruction="Other project private work", dispatch_state="RUNNING", context={"title": "PRIVATE-OTHER-WORK"}))
+        session.flush()
+        other_file = dashboard["store"].save_artifact(session, b"Other project's file", "private-other-file.md", "RUN-OTHER", "PM-LOCAL", "REQUIREMENT", "pm-01")
+        session.add(AuditLogModel(action="TASK_COMPLETED", actor="pm-01", target="PRIVATE-OTHER-AUDIT", run_id="RUN-OTHER", result="SUCCESS"))
+        session.add(AgentEventModel(event_id="PRIVATE-OTHER-EVENT", event_type="TASK_STARTED", run_id="RUN-OTHER", task_id="PM-LOCAL", payload={}))
+        session.add(TaskDependencyModel(task_id="TEST-1", depends_on_task_id="PM-LOCAL"))
+        session.commit()
+        scoped = dashboard_snapshot(session, project_id="LIB", view="project")
+        assert {a["agent_id"] for a in scoped["agents"]} == {"ba-01", "dev-01", "tester-01"}
+        dev = next(a for a in scoped["agents"] if a["agent_id"] == "dev-01")
+        assert dev["task"]["run_id"] == "RUN-DASH" and dev["status"] == "WAITING_AGENT"
+        assert scoped["summary"]["files_received"] == 1
+        assert {a["run_id"] for a in [*scoped["artifacts"], *scoped["recent_artifacts"]]} == {"RUN-DASH"}
+        assert all(e["from"] != "PM-LOCAL" for e in scoped["edges"])
+        assert "PRIVATE-OTHER" not in json.dumps(scoped["activity"])
+        assert other_file.artifact_id not in {a["artifact_id"] for a in scoped["recent_artifacts"]}
+        assert all(a["task"] is None or a["task"]["run_id"] == "RUN-DASH" for a in scoped["agents"])
+        system = dashboard_snapshot(session, project_id="LIB", view="system")
+        assert len(system["agents"]) == 10 and system["summary"]["files_received"] == 2
+        assert next(a for a in system["agents"] if a["agent_id"] == "dev-01")["task"]["title"] == "PRIVATE-OTHER-WORK"
+        with pytest.raises(LookupError):
+            dashboard_snapshot(session, "RUN-OTHER", project_id="LIB", view="project")
+
+
+@pytest.mark.asyncio
+async def test_rename_project_is_authenticated_and_preserves_run_ids_and_files(dashboard):
+    url = "/api/v1/projects/LIB"
+    with dashboard["factory"]() as session:
+        before = dashboard_snapshot(session, project_id="LIB")
+        original_path = before["artifacts"][0]["local_path"]
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=dashboard["app"]), base_url="http://test") as client:
+        assert (await client.patch(url, json={"name": "Quản lý nhà hàng"})).status_code == 401
+        renamed = await client.patch(url, json={"name": "Quản lý nhà hàng"}, headers=dashboard["headers"])
+        assert renamed.status_code == 200 and renamed.json()["project_id"] == "LIB"
+        data = (await client.get("/api/v1/dashboard/snapshot?project_id=LIB&view=project", headers=dashboard["headers"])).json()
+        assert data["selected_project"]["name"] == "Quản lý nhà hàng" and data["selected_run"]["run_id"] == "RUN-DASH"
+        assert data["artifacts"][0]["local_path"] == original_path
+        assert (await client.patch(url, json={"name": "   "}, headers=dashboard["headers"])).status_code == 422
+        assert (await client.patch("/api/v1/projects/MISSING", json={"name": "Tên mới"}, headers=dashboard["headers"])).status_code == 404
+        from control.app.security.authentication import WorkerPrincipal
+        dashboard["app"].dependency_overrides[get_current_principal] = lambda: WorkerPrincipal("worker-3", "PC3", ["ba-01"])
+        assert (await client.patch(url, json={"name": "Not allowed"})).status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_new_project_accepts_an_explicit_display_name(dashboard, monkeypatch):
+    from control.app.api.dependencies import get_publisher
+    monkeypatch.setattr(settings, "MAX_CONCURRENT_RUNS", 10)
+    dashboard["app"].dependency_overrides[get_publisher] = lambda: None
+    proposal = {"project_name": "Restaurant management", "overview": "Quản lý thực đơn", "modules": [
+        {"module_id": "menu", "name": "Thực đơn", "description": "Quản lý món ăn", "tasks": [
+            {"task_id": "add-dish", "title": "Thêm món", "description": "Thêm món vào thực đơn", "acceptance_criteria": ["Món được lưu"]}]}]}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=dashboard["app"]), base_url="http://test") as client:
+        created = await client.post("/api/v1/runs", headers=dashboard["headers"], json={"run_id": "RUN-REST-NAME", "project_id": "PRJ-REST",
+            "project_name": "Quản lý nhà hàng Bếp Việt", "brief": "Xây dựng hệ thống quản lý nhà hàng", "module_plan": proposal})
+        assert created.status_code == 201, created.text
+        data = (await client.get("/api/v1/dashboard/snapshot?project_id=PRJ-REST&view=project", headers=dashboard["headers"])).json()
+        assert data["selected_project"]["name"] == "Quản lý nhà hàng Bếp Việt"
+        assert all(task["run_id"] == "RUN-REST-NAME" for task in data["tasks"])

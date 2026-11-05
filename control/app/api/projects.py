@@ -14,6 +14,7 @@ from control.app.security.authentication import AdminPrincipal, Principal
 from control.app.services.change_requests import ChangeRequestService, ChangeRequestError
 from control.app.services.artifact_store import ArtifactStoreService
 from control.app.services.project_report import artifact_path, DOCX_MEDIA_TYPE
+from control.app.database.repositories import AuditRepository
 
 router = APIRouter(prefix="/projects", tags=["Projects and changes"])
 
@@ -23,6 +24,10 @@ class CreateChangeRequest(BaseModel):
     title: str | None = Field(None, max_length=255)
     base_run_id: str | None = Field(None, max_length=64)
     module_plan: ChangePlan | None = None
+
+
+class RenameProjectRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
 
 
 def project_summary(project):
@@ -65,6 +70,29 @@ def list_releases(project_id: str, session: Session = Depends(get_db), principal
         raise HTTPException(404, detail="Project not found")
     return [release_summary(r) for r in session.scalars(select(ProjectReleaseModel)
         .where(ProjectReleaseModel.project_id == project_id).order_by(ProjectReleaseModel.version.desc()))]
+
+
+@router.patch("/{project_id}")
+def rename_project(project_id: str, request: RenameProjectRequest, session: Session = Depends(get_db),
+                   admin: AdminPrincipal = Depends(require_admin)):
+    name = request.name.strip()
+    if not name:
+        raise HTTPException(422, detail="Project name cannot be blank")
+    project = session.scalar(select(ProjectModel).where(ProjectModel.project_id == project_id).with_for_update())
+    previous = project.name if project else None
+    if not project:
+        root = session.scalar(select(WorkflowRunModel).where(WorkflowRunModel.project_id == project_id)
+            .order_by(WorkflowRunModel.created_at, WorkflowRunModel.run_id).limit(1))
+        if not root:
+            raise HTTPException(404, detail="Project not found")
+        project = ProjectModel(project_id=project_id, root_run_id=root.run_id, name=name)
+        session.add(project)
+    else:
+        project.name = name
+    AuditRepository.record(session, actor=admin.actor_id, action="PROJECT_RENAMED", target=project_id,
+        run_id=project.root_run_id, result="SUCCESS", details={"previous_name": previous, "name": name})
+    session.commit()
+    return project_summary(project)
 
 
 @router.get("/{project_id}/releases/{release_id}")

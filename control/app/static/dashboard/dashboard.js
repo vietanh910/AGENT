@@ -1,20 +1,21 @@
 "use strict";
 (() => {
   const $ = (id) => document.getElementById(id);
-  const state = { token: "", snapshot: null, runId: "", scope: "run", selectedTask: null,
+  const state = { token: "", snapshot: null, projectId: "", runId: "", view: "system", scope: "run", selectedTask: null,
     controller: null, reconnectTimer: null, seenFiles: new Set(), firstSnapshot: true,
     newFiles: new Set(), keys: {}, connected: false, lastByte: 0 };
   const labels = { RUNNING: "Đang thực hiện", ASSIGNED: "Đã giao việc", COMPLETED: "Hoàn thành",
     IDLE: "Sẵn sàng", QUEUED: "Trong kế hoạch", RETRY_WAIT: "Đang thử lại", BLOCKED: "Đang bị chặn",
     FAILED: "Có lỗi", CANCELLED: "Đã hủy", OFFLINE: "Mất kết nối", UNREGISTERED: "Chưa kết nối",
     PLANNING: "Đang lập kế hoạch", CREATED: "Vừa tạo", AWAITING_APPROVAL: "Chờ phê duyệt", LOCAL: "Chạy trên Control",
-    WAITING_WORKER: "Chờ worker" };
+    WAITING_WORKER: "Chờ worker", WAITING_AGENT: "Chờ agent sẵn sàng" };
   const eventLabels = { ARTIFACT_RECEIVED: "Đã nhận file bàn giao", ARTIFACT_RESTORED: "Đã khôi phục file",
     TASK_DISPATCHED: "Đã giao công việc", TASK_STARTED: "Bắt đầu thực hiện", TASK_COMPLETED: "Hoàn thành công việc",
     TASK_FAILED: "Tác vụ có lỗi", TASK_BLOCKED: "Tác vụ đang chờ xử lý", WORKER_ONLINE: "Máy đã kết nối",
     WORKER_OFFLINE: "Máy mất kết nối", PROJECT_AUTO_RECOVERY: "PM đang khôi phục công việc",
     TASK_RECOVERY_SCHEDULED: "PM đã lên lịch khôi phục", PM_RECOVERY_COMPLETED: "PM đã hoàn thành phần làm thay",
-    RELEASE_ACCEPTED: "Đã nghiệm thu phiên bản", RUN_CREATED: "Đã tạo dự án", PLAN_SAVED: "Đã lưu kế hoạch" };
+    RELEASE_ACCEPTED: "Đã nghiệm thu phiên bản", RUN_CREATED: "Đã tạo dự án", PLAN_SAVED: "Đã lưu kế hoạch",
+    PROJECT_RENAMED: "Đã đổi tên dự án" };
   const active = (status) => ["RUNNING", "ASSIGNED"].includes(status);
   const taskState = (task) => active(task.status) && ["OFFLINE", "UNREGISTERED"].includes(task.worker_connection) ? "WAITING_WORKER" : task.status;
   const escape = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -57,8 +58,10 @@
     while ($("toasts").children.length > 3) $("toasts").firstElementChild.remove();
   }
   function accept(data) {
+    if (state.projectId && data.selected_project?.project_id !== state.projectId) return;
     const previousRun = state.snapshot?.selected_run?.run_id;
     state.snapshot = data;
+    if (!state.projectId) state.projectId = data.selected_project?.project_id || "";
     for (const file of data.recent_artifacts) {
       if (!state.firstSnapshot && !state.seenFiles.has(file.artifact_id)) state.newFiles.add(file.artifact_id);
       state.seenFiles.add(file.artifact_id);
@@ -87,14 +90,30 @@
     $("metric-tasks").textContent = data.selected_run ? `${data.selected_run.task_counts.COMPLETED} / ${data.selected_run.task_total} task hoàn thành` : "Chưa có dự án";
     $("side-file-count").textContent = number(data.summary.files_received);
     $("agent-count").textContent = data.agents.length;
+    const projectView = data.view === "project";
+    $("page-title").innerHTML = `${escape(projectView ? data.selected_project?.name || "Luồng dự án" : "Trung tâm điều phối")}<span class="title-dot">.</span>`;
+    $("page-eyebrow").textContent = projectView ? "LUỒNG DỰ ÁN" : "MỌI CHUYỂN ĐỘNG, MỘT GÓC NHÌN";
+    $("page-breadcrumb").textContent = projectView ? "DỰ ÁN / LUỒNG CÔNG VIỆC" : "HỆ THỐNG / GIÁM SÁT";
+    $("page-description").textContent = projectView ? "Theo dõi công việc, agent và tài liệu của riêng dự án đang chọn." : "Theo dõi đội ngũ agent, công việc và từng sản phẩm bàn giao.";
+    $("agent-caption").textContent = projectView ? `Agent tham gia ${data.selected_project?.name || "dự án đang chọn"}` : "Hoạt động hiện tại trên tất cả các dự án";
+    $("metric-agent-caption").textContent = projectView ? "Hoạt động trong dự án đang chọn" : "Trạng thái tác vụ toàn hệ thống";
+    document.querySelector('[data-scope="all"]').textContent = projectView ? "Toàn dự án" : "Toàn hệ thống";
+    document.querySelector('[data-scope="run"]').textContent = "Đợt đang xem";
     updateIfChanged("agents", data.agents, renderAgents);
     updateIfChanged("workers", data.workers, () => {
       $("machine-strip").innerHTML = data.workers.map((w) => `<span title="${escape(w.last_seen ? `Heartbeat: ${w.last_seen}` : "Chưa đăng ký worker")}"><i class="dot ${w.status === "ONLINE" ? "" : "offline-dot"}"></i>${escape(w.machine_id)} · ${escape(labels[w.status] || w.status)}</span>`).join("");
     });
+    updateIfChanged("projects", data.projects, () => {
+      $("project-select").innerHTML = data.projects.length ? data.projects.map((p) => `<option value="${escape(p.project_id)}">${escape(p.name)}</option>`).join("") : '<option value="">Chưa có dự án</option>';
+    });
+    if (data.selected_project) $("project-select").value = data.selected_project.project_id;
+    $("rename-project").disabled = !data.selected_project;
     updateIfChanged("runs", data.runs, () => {
-      $("run-select").innerHTML = data.runs.length ? data.runs.map((r) => `<option value="${escape(r.run_id)}">${escape(r.name)} · ${escape(r.run_id)}</option>`).join("") : '<option value="">Chưa có dự án</option>';
+      $("run-select").innerHTML = data.runs.length ? data.runs.map((r) => `<option value="${escape(r.run_id)}">Đợt ${r.sequence} · ${escape(labels[r.status] || r.status)}</option>`).join("") : '<option value="">Chưa có đợt công việc</option>';
+      $("run-select-label").hidden = data.runs.length < 2;
     });
     if (data.selected_run) $("run-select").value = data.selected_run.run_id;
+    $("run-select").disabled = !data.runs.length;
     updateIfChanged("run", data.selected_run, renderRun);
     updateIfChanged("graph", [data.tasks, data.edges], renderGraph);
     updateIfChanged("files", [data.artifacts, data.recent_artifacts], renderFiles);
@@ -106,9 +125,9 @@
     $("agent-grid").innerHTML = state.snapshot.agents.map((agent) => {
       const task = agent.task;
       const working = !!task && active(task.status) && ["ONLINE", "LOCAL"].includes(agent.connection);
-      const description = task?.title || (agent.connection === "OFFLINE" ? "Chờ máy trực tuyến để tiếp tục" : agent.connection === "UNREGISTERED" ? "Chưa nhận heartbeat từ worker" : "Sẵn sàng nhận công việc tiếp theo");
+      const description = task?.title || (state.view === "project" ? "Không có nhiệm vụ trong đợt đang xem" : agent.connection === "OFFLINE" ? "Chờ máy trực tuyến để tiếp tục" : agent.connection === "UNREGISTERED" ? "Chưa nhận heartbeat từ worker" : "Sẵn sàng nhận công việc tiếp theo");
       return `<article class="agent-card ${working ? "working" : ""}"><div class="agent-top"><span class="role-icon">${escape(agent.role === "SCRUM_MASTER" ? "SM" : agent.role === "SECURITY" ? "SEC" : agent.role)}</span><span class="agent-machine">${escape(agent.connection === "LOCAL" ? "CONTROL" : agent.machine_id)}</span></div><div class="agent-name">${escape(agent.role.replace("_", " "))}</div><p class="agent-task" title="${escape(description)}">${escape(description)}</p><div class="agent-bottom"><span class="${working ? "running" : agent.connection === "OFFLINE" ? "offline-text" : ""}"><i class="dot ${working ? "" : "muted"}"></i>${escape(labels[agent.status] || agent.status)}</span><span class="agent-id" title="${escape(agent.agent_id)}">${escape(agent.agent_id)}</span></div></article>`;
-    }).join("");
+    }).join("") || '<p class="empty">Chưa có agent được phân công cho dự án này.</p>';
     updateIfChanged("agent-filter", state.snapshot.agents.map((a) => a.agent_id), () => {
       const selected = $("file-agent-filter").value;
       $("file-agent-filter").innerHTML = '<option value="">Tất cả agent</option>' + state.snapshot.agents.map((a) => `<option value="${escape(a.agent_id)}">${escape(a.agent_id)}</option>`).join("");
@@ -229,7 +248,10 @@
       state.reconnectTimer = setTimeout(startStream, 2000); return;
     }
     const controller = new AbortController(); state.controller = controller; state.lastByte = Date.now();
-    const query = state.runId ? `?run_id=${encodeURIComponent(state.runId)}` : "";
+    const params = new URLSearchParams({ view: state.view });
+    if (state.projectId) params.set("project_id", state.projectId);
+    if (state.runId) params.set("run_id", state.runId);
+    const query = `?${params}`;
     try {
       const response = await fetch(`/api/v1/dashboard/stream${query}`, { headers: { Authorization: `Bearer ${state.token}`, Accept: "text/event-stream" }, signal: controller.signal, cache: "no-store" });
       if ([401, 403].includes(response.status)) { disconnect("Mã truy cập không còn hợp lệ. Vui lòng kết nối lại."); return; }
@@ -243,9 +265,10 @@
           const block = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2);
           const lines = block.split("\n"), event = lines.find((line) => line.startsWith("event:"))?.slice(6).trim();
           const data = lines.filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
+          if (state.controller !== controller) return;
           if (event === "snapshot" && data) accept(JSON.parse(data));
           if (event === "unavailable") {
-            if (data && JSON.parse(data).message === "Run not found") { state.runId = ""; controller.abort(); }
+            if (data && JSON.parse(data).message === "Run not found") { state.runId = ""; state.projectId = ""; controller.abort(); }
             connection(false, "Dữ liệu gián đoạn"); alert("Control Node đang chờ dữ liệu. Thông tin bên dưới là lần đồng bộ gần nhất.");
           }
         }
@@ -259,12 +282,14 @@
   }
   function disconnect(message = "") {
     stopStream(); state.token = ""; state.snapshot = null; state.keys = {}; state.selectedTask = null;
-    state.firstSnapshot = true; state.seenFiles.clear(); state.newFiles.clear(); state.runId = "";
+    state.firstSnapshot = true; state.seenFiles.clear(); state.newFiles.clear(); state.runId = ""; state.projectId = ""; state.view = "system";
     for (const id of ["agent-grid", "machine-strip", "task-nodes", "file-rows", "activity-list", "task-detail", "run-summary", "graph-edges"]) $(id).replaceChildren();
     for (const id of ["metric-agents", "metric-workers", "metric-progress", "metric-files"]) $(id).textContent = "—";
     $("storage-root").textContent = "Chưa có dữ liệu"; $("side-host").textContent = "Chưa kết nối";
     $("storage-host").textContent = "Kho file trên Control Node";
     $("run-select").innerHTML = '<option value="">Chưa có dự án</option>';
+    $("project-select").innerHTML = '<option value="">Chưa có dự án</option>';
+    $("project-name-dialog").close();
     $("metric-tasks").textContent = "Chưa chọn dự án";
     $("footer-revision").textContent = "Chưa đồng bộ";
     connection(false, "Chưa kết nối"); $("task-dialog").close();
@@ -283,7 +308,43 @@
     finally { $("connect-button").disabled = false; }
   });
   $("disconnect").addEventListener("click", () => disconnect());
-  $("run-select").addEventListener("change", (event) => { state.runId = event.target.value; connection(false, "Đang chuyển dự án"); startStream(); });
+  function loadSelection(view) {
+    stopStream(); state.view = view; state.snapshot = null; state.keys = {}; state.selectedTask = null;
+    state.firstSnapshot = true; state.newFiles.clear(); $("toasts").replaceChildren();
+    $("task-dialog").close(); $("file-search").value = ""; $("file-agent-filter").value = "";
+    for (const id of ["agent-grid", "machine-strip", "task-nodes", "file-rows", "activity-list", "task-detail", "graph-edges"]) $(id).replaceChildren();
+    $("run-summary").innerHTML = '<p class="empty">Đang tải dữ liệu dự án…</p>';
+    $("page-title").textContent = view === "project" ? "Đang tải dự án…" : "Trung tâm điều phối";
+    $("agent-caption").textContent = "Đang tải thông tin agent…";
+    $("rename-project").disabled = true; $("run-select").disabled = true;
+    $("run-select-label").hidden = true;
+    $("run-select").innerHTML = '<option value="">Đang tải đợt công việc…</option>';
+    $("recovery-banner").hidden = true;
+    for (const id of ["metric-agents", "metric-workers", "metric-progress", "metric-files"]) $(id).textContent = "—";
+    document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.hash === (view === "project" ? "#workflow" : "#overview")));
+    connection(false, "Đang tải dữ liệu"); startStream();
+  }
+  $("project-select").addEventListener("change", (event) => {
+    state.projectId = event.target.value; state.runId = ""; loadSelection("project");
+  });
+  $("run-select").addEventListener("change", (event) => { state.runId = event.target.value; loadSelection("project"); });
+  $("rename-project").addEventListener("click", () => {
+    if (!state.snapshot?.selected_project) return;
+    $("project-name-input").value = state.snapshot.selected_project.name;
+    $("project-name-error").hidden = true; $("project-name-dialog").showModal(); $("project-name-input").select();
+  });
+  $("cancel-project-name").addEventListener("click", () => $("project-name-dialog").close());
+  $("project-name-form").addEventListener("submit", async (event) => {
+    event.preventDefault(); const name = $("project-name-input").value.trim(); if (!name) return;
+    $("save-project-name").disabled = true; $("project-name-error").hidden = true;
+    try {
+      const response = await fetch(`/api/v1/projects/${encodeURIComponent(state.projectId)}`, {
+        method: "PATCH", headers: { Authorization: `Bearer ${state.token}`, "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+      if (!response.ok) throw new Error("Không lưu được tên dự án. Vui lòng thử lại.");
+      $("project-name-dialog").close(); toast("Đã cập nhật tên dự án."); startStream();
+    } catch (error) { $("project-name-error").textContent = error.message; $("project-name-error").hidden = false; }
+    finally { $("save-project-name").disabled = false; }
+  });
   document.querySelectorAll("[data-scope]").forEach((button) => button.addEventListener("click", () => {
     state.scope = button.dataset.scope;
     document.querySelectorAll("[data-scope]").forEach((item) => { item.classList.toggle("active", item === button); item.setAttribute("aria-pressed", String(item === button)); });
@@ -305,6 +366,8 @@
   });
   document.querySelectorAll(".nav-item").forEach((link) => link.addEventListener("click", () => {
     document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item === link));
+    if (link.hash === "#workflow" && state.view !== "project") loadSelection("project");
+    if (link.hash === "#overview" && state.view !== "system") loadSelection("system");
   }));
   new ResizeObserver(() => requestAnimationFrame(drawEdges)).observe($("graph-canvas"));
   setInterval(() => {

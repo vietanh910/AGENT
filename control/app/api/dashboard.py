@@ -3,6 +3,7 @@
 import asyncio
 from hashlib import file_digest
 import json
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
@@ -22,20 +23,21 @@ def dashboard_session_factory():
 
 
 @router.get("/snapshot")
-def snapshot(run_id: str | None = None, session: Session = Depends(get_db), admin=Depends(require_admin)):
+def snapshot(run_id: str | None = None, project_id: str | None = None, view: Literal["system", "project"] = "system",
+             session: Session = Depends(get_db), admin=Depends(require_admin)):
     try:
-        return dashboard_snapshot(session, run_id)
+        return dashboard_snapshot(session, run_id, project_id, view)
     except LookupError as exc:
         raise HTTPException(404, detail="Run not found") from exc
 
 
-async def snapshot_stream(request, factory, run_id=None, interval=1.0):
+async def snapshot_stream(request, factory, run_id=None, interval=1.0, project_id=None, view="system"):
     revision = None
     while not await request.is_disconnected():
         try:
             def read():
                 with factory() as session:
-                    return dashboard_snapshot(session, run_id)
+                    return dashboard_snapshot(session, run_id, project_id=project_id, view=view)
             data = await asyncio.to_thread(read)
             if data["revision"] != revision:
                 revision = data["revision"]
@@ -53,9 +55,10 @@ async def snapshot_stream(request, factory, run_id=None, interval=1.0):
 
 
 @router.get("/stream")
-async def stream(request: Request, run_id: str | None = None,
+async def stream(request: Request, run_id: str | None = None, project_id: str | None = None,
+                 view: Literal["system", "project"] = "system",
                  factory=Depends(dashboard_session_factory), admin=Depends(require_admin)):
-    return StreamingResponse(snapshot_stream(request, factory, run_id), media_type="text/event-stream",
+    return StreamingResponse(snapshot_stream(request, factory, run_id, project_id=project_id, view=view), media_type="text/event-stream",
         headers={"Cache-Control": "no-cache, no-store", "X-Accel-Buffering": "no"})
 
 

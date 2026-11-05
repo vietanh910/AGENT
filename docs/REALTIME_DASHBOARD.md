@@ -21,12 +21,31 @@ MySQL và schema hiện có cần hoạt động để đọc dữ liệu. Khi c
 
 - **Agent:** vai trò, máy thực hiện, trạng thái, công việc hiện tại. PM làm thay tại Control Node được nhận diện từ task thực tế, kể cả khi worker PM không hoạt động.
 - **Máy/worker:** online, offline hoặc chưa đăng ký, dựa trên trạng thái và heartbeat gần nhất. Agent chưa đăng ký không được hiển thị là sẵn sàng chỉ vì một worker khác cùng máy đang online.
-- **Dự án:** chọn run để xem tên, trạng thái, tiến độ, task và các quan hệ phụ thuộc từ database. Chọn task để đọc chỉ dẫn, tiêu chí nghiệm thu, số lần thực hiện/khôi phục, nguồn artifact và file đầu ra.
+- **Dự án:** chọn tên dự án, ví dụ “Quản lý nhà hàng”, để mở luồng riêng. Mỗi dự án xuất hiện một lần trong danh sách; các đợt xây dựng/chỉnh sửa nằm trong ô “Đợt công việc” riêng. Chọn task để đọc chỉ dẫn, tiêu chí nghiệm thu, số lần thực hiện/khôi phục, nguồn artifact và file đầu ra.
 - **Kiểm thử và phục hồi:** task có verdict FAIL/chưa có verdict hoặc lỗi bàn giao được hiển thị đang bị chặn; không tính hoàn thành cho đến khi được xử lý/kiểm tra lại. Banner hiển thị lý do và lịch thử lại của PM.
 - **File bàn giao:** tên, loại, agent gửi, máy gửi, task/module, thời điểm nhận, dung lượng, đường dẫn tuyệt đối và tình trạng file trên ổ đĩa. File mới có thông báo ngay khi snapshot tiếp theo đọc được bản ghi đã commit.
 - **Nhật ký:** sự kiện agent/worker, khôi phục, nghiệm thu và file nhận về, lấy từ các bản ghi đã lưu. Giao diện không xuất toàn bộ payload hoặc cấu hình bí mật của sự kiện.
 
-Sơ đồ thể hiện quan hệ phụ thuộc thực tế của các task; thứ tự được sắp theo DAG. Nhãn **Chờ worker** phân biệt tình trạng task còn được ghi đang chạy nhưng máy thực hiện đã mất kết nối. Các agent được theo dõi trên toàn hệ thống; sơ đồ và tiến độ thuộc run đang chọn.
+Sơ đồ thể hiện quan hệ phụ thuộc thực tế của các task; thứ tự được sắp theo DAG. Nhãn **Chờ worker** phân biệt tình trạng task còn được ghi đang chạy nhưng máy thực hiện đã mất kết nối.
+
+## Chọn dự án và đổi tên
+
+- **Tổng quan** hiển thị hoạt động toàn hệ thống.
+- Chọn tên trong ô **Dự án**, hoặc mở **Luồng dự án**, sẽ chuyển sang chế độ riêng của dự án đó: agent, công việc, số file, nhật ký và máy liên quan đều được lọc theo project ID. Nếu một agent dùng chung đang bận ở dự án khác, trang chỉ ghi “Chờ agent sẵn sàng”, không hiển thị công việc của dự án kia.
+- Tên ưu tiên lấy từ tên dự án đã lưu, rồi tên trong kế hoạch gốc. Với dữ liệu cũ chỉ có mã `PRJ-...`, hệ thống dùng mô tả yêu cầu ban đầu để tạo nhãn dễ đọc, thay vì lấy tên của lần chỉnh sửa mới nhất.
+- Bấm **Đổi tên** cạnh ô chọn dự án để đặt tên chính xác, ví dụ “Quản lý nhà hàng”. Tên được lưu vào database; mã project/run, các task, release cũ và đường dẫn file giữ nguyên.
+- Nếu dự án có nhiều đợt, ô **Đợt công việc** cho phép xem riêng sơ đồ và tiến độ từng đợt. Danh sách chính không lặp lại cùng một dự án cho mỗi run.
+
+Khi tạo qua Control API `POST /api/v1/runs` hoặc PM managed API `POST /projects`, có thể gửi `project_name` ngay từ đầu:
+
+```json
+{
+  "project_name": "Quản lý nhà hàng",
+  "brief": "Xây dựng phần mềm quản lý bàn, thực đơn và đơn hàng"
+}
+```
+
+Đổi tên dự án đã có dùng `PATCH /api/v1/projects/{project_id}` với body `{"name":"Quản lý nhà hàng"}`, yêu cầu quyền Admin. Dự án cũ chưa có bản ghi trong bảng `projects` được bổ sung metadata từ run gốc khi đổi tên, không chạy lại task.
 
 ## Đường dẫn file là trên máy nào?
 
@@ -43,7 +62,9 @@ File mới upload từ Worker ghi `source_worker_id` và `source_machine` từ d
 
 Nếu file bị mất, dashboard vẫn giữ bản ghi và đường dẫn dự kiến, đánh dấu thiếu file và tắt nút tải. Khi tải, server đối chiếu checksum với bản ghi trước khi trả nội dung. Trạng thái khôi phục file cập nhật theo lần đọc dữ liệu tiếp theo.
 
-Có bộ lọc theo agent, ô tìm tên/file/task/đường dẫn, và phạm vi run hoặc toàn hệ thống. Danh sách run giới hạn 100 run gần nhất; bảng file hiển thị 200 file gần nhất của run hoặc 80 file gần nhất toàn hệ thống. Tổng số file ở phần thống kê là tổng bản ghi artifact trong kho, không phải số hàng đang hiển thị. Bảng và sơ đồ có thể cuộn ngang trên màn hình nhỏ.
+Có bộ lọc theo agent và ô tìm tên/file/task/đường dẫn. Trong luồng dự án, hai phạm vi file là **Đợt đang xem** và **Toàn dự án**; phạm vi toàn dự án gồm các đợt của đúng project đó. Về **Tổng quan** để xem phạm vi **Toàn hệ thống**.
+
+Danh sách chính giới hạn 100 dự án có hoạt động gần nhất, lịch sử tối đa 100 đợt của dự án đang chọn. Bảng file hiển thị 200 file gần nhất của đợt hoặc 80 file gần nhất của phạm vi rộng hơn. Thống kê file tính toàn bộ artifact của phạm vi dự án/hệ thống tương ứng. Bảng và sơ đồ có thể cuộn ngang trên màn hình nhỏ.
 
 ## Realtime và khi mất kết nối
 
@@ -61,6 +82,8 @@ Các endpoint dashboard yêu cầu quyền Admin:
 ```text
 GET /api/v1/dashboard/snapshot?run_id=RUN-...
 GET /api/v1/dashboard/stream?run_id=RUN-...
+GET /api/v1/dashboard/snapshot?project_id=PRJ-...&view=project
+GET /api/v1/dashboard/stream?project_id=PRJ-...&view=project&run_id=RUN-...
 GET /api/v1/dashboard/artifacts/{artifact_id}/content
 ```
 
@@ -80,4 +103,4 @@ python -m pytest control/tests/test_dashboard.py -q
 
 Kiểm thử backend dùng SQLite và file thật: xác thực, heartbeat hết hạn, PM làm thay cục bộ, task kiểm thử FAIL, nguồn máy gửi đã xác thực, đường dẫn tuyệt đối, file mất/sai checksum, sự kiện mới và stream tự hồi phục khi database lỗi.
 
-Đã kiểm tra thêm bằng Chrome headless ở desktop và mobile với ứng dụng QA sử dụng database thử nghiệm riêng: tải file mới qua HTTP rồi nhận trên trang bằng SSE, sao chép đúng đường dẫn, tải đúng bytes, tìm kiếm, chuyển run, chi tiết task và mất mạng/kết nối lại. Chưa kiểm tra trên MySQL và cụm năm máy chạy thật.
+Đã kiểm tra thêm bằng Chrome headless ở desktop và mobile với ứng dụng QA sử dụng database thử nghiệm riêng: tải file mới qua HTTP rồi nhận trên trang bằng SSE, sao chép đúng đường dẫn, tải đúng bytes, tìm kiếm, chuyển dự án/đợt, chi tiết task và mất mạng/kết nối lại. Có kiểm tra tên dễ đọc, đổi tên được lưu, gom các run thành một dự án và không hiển thị agent/file/nhật ký của dự án khác trong luồng đang xem. Chưa kiểm tra trên MySQL và cụm năm máy chạy thật.

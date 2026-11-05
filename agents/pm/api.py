@@ -390,6 +390,7 @@ from conductor.state import (
 
 class CreateProjectBody(BaseModel):
     brief: str
+    project_name: str | None = None
     auto_approve: bool = False
     allow_real_deploy: bool = False
     project_id: str | None = None
@@ -433,6 +434,8 @@ def create_project(body: CreateProjectBody, token: str = Depends(verify_bearer_t
         if body.auto_approve or body.allow_real_deploy:
             raise HTTPException(status_code=400, detail="Managed projects use Control Node approval and deployment settings")
         payload = {"brief": body.brief, "project_id": body.project_id}
+        if body.project_name:
+            payload["project_name"] = body.project_name
         if body.module_plan:
             payload["module_plan"] = body.module_plan
         return control_request(config, "POST", payload=payload)

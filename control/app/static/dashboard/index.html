@@ -15,7 +15,7 @@
       <div class="side-label">KHÔNG GIAN LÀM VIỆC</div>
       <nav aria-label="Điều hướng">
         <a href="#overview" class="nav-item active"><span class="nav-icon">◫</span>Tổng quan<span class="nav-dot"></span></a>
-        <a href="#workflow" class="nav-item"><span class="nav-icon">⇄</span>Luồng công việc</a>
+        <a href="#workflow" class="nav-item"><span class="nav-icon">⇄</span>Luồng dự án</a>
         <a href="#files" class="nav-item"><span class="nav-icon">▤</span>File bàn giao<span id="side-file-count" class="count">0</span></a>
         <a href="#activity" class="nav-item"><span class="nav-icon">◷</span>Nhật ký hoạt động</a>
       </nav>
@@ -23,18 +23,18 @@
       <div class="side-footer"><span class="avatar">PM</span><div>Trung tâm điều phối<small>Agent team · 5 máy</small></div><button id="disconnect" class="icon-button" title="Ngắt kết nối" aria-label="Ngắt kết nối">↪</button></div>
     </aside>
     <main>
-      <header class="topbar"><span>HỆ THỐNG <b>/</b> GIÁM SÁT</span><div><span id="live-status" class="live-pill offline"><i class="dot"></i>Chưa kết nối</span><time id="clock"></time></div></header>
+      <header class="topbar"><span id="page-breadcrumb">HỆ THỐNG <b>/</b> GIÁM SÁT</span><div><span id="live-status" class="live-pill offline"><i class="dot"></i>Chưa kết nối</span><time id="clock"></time></div></header>
       <div class="content">
-        <section id="overview" class="page-intro"><div><div class="eyebrow">MỌI CHUYỂN ĐỘNG, MỘT GÓC NHÌN</div><h1>Trung tâm điều phối<span class="title-dot">.</span></h1><p>Theo dõi đội ngũ agent, công việc và từng sản phẩm bàn giao.</p></div><div class="intro-meta"><span class="refresh-icon">↻</span><div>Cập nhật tự động<small id="last-updated">Đang chờ dữ liệu</small></div></div></section>
+        <section id="overview" class="page-intro"><div><div id="page-eyebrow" class="eyebrow">MỌI CHUYỂN ĐỘNG, MỘT GÓC NHÌN</div><h1 id="page-title">Trung tâm điều phối<span class="title-dot">.</span></h1><p id="page-description">Theo dõi đội ngũ agent, công việc và từng sản phẩm bàn giao.</p></div><div class="intro-meta"><span class="refresh-icon">↻</span><div>Cập nhật tự động<small id="last-updated">Đang chờ dữ liệu</small></div></div></section>
         <div id="connection-alert" class="alert" role="status" hidden></div>
         <section class="metrics" aria-label="Tổng quan hệ thống">
-          <article class="metric"><span>AGENT ĐANG LÀM VIỆC</span><div><strong id="metric-agents">—</strong><small id="metric-agents-total">/ — agent</small><i class="metric-icon teal">↗</i></div><p>Trạng thái tác vụ toàn hệ thống</p></article>
+          <article class="metric"><span>AGENT ĐANG LÀM VIỆC</span><div><strong id="metric-agents">—</strong><small id="metric-agents-total">/ — agent</small><i class="metric-icon teal">↗</i></div><p id="metric-agent-caption">Trạng thái tác vụ toàn hệ thống</p></article>
           <article class="metric"><span>MÁY ĐANG KẾT NỐI</span><div><strong id="metric-workers">—</strong><small id="metric-workers-total">/ — máy</small><i class="metric-icon blue">▣</i></div><p>Theo heartbeat gần nhất</p></article>
           <article class="metric"><span>TIẾN ĐỘ DỰ ÁN</span><div><strong id="metric-progress">—</strong><small>%</small><i class="metric-icon violet">◴</i></div><p id="metric-tasks">Chưa chọn dự án</p></article>
           <article class="metric"><span>FILE ĐÃ NHẬN</span><div><strong id="metric-files">—</strong><small>file</small><i class="metric-icon amber">↓</i></div><p>Lưu tại kho bàn giao Control Node</p></article>
         </section>
-        <section class="section"><div class="section-heading"><div><h2>Đội ngũ agent <span id="agent-count" class="sub-count">10</span></h2><p>Hoạt động hiện tại trên tất cả các dự án</p></div><span class="legend"><i class="dot"></i>Đang làm việc <i class="dot muted"></i>Rảnh / chưa kết nối</span></div><div id="agent-grid" class="agent-grid"><div class="empty">Kết nối để xem trạng thái các agent.</div></div><div id="machine-strip" class="machine-strip"></div></section>
-        <section id="workflow" class="panel workflow-panel"><div class="panel-heading"><div><div class="eyebrow">TỪ KẾ HOẠCH ĐẾN BÀN GIAO</div><h2>Luồng công việc</h2></div><label class="run-select-label"><span>Dự án / lần thực hiện</span><select id="run-select" aria-label="Chọn dự án hoặc lần thực hiện"><option value="">Chưa có dự án</option></select></label></div>
+        <section class="section"><div class="section-heading"><div><h2>Đội ngũ agent <span id="agent-count" class="sub-count">10</span></h2><p id="agent-caption">Hoạt động hiện tại trên tất cả các dự án</p></div><span class="legend"><i class="dot"></i>Đang làm việc <i class="dot muted"></i>Rảnh / chưa kết nối</span></div><div id="agent-grid" class="agent-grid"><div class="empty">Kết nối để xem trạng thái các agent.</div></div><div id="machine-strip" class="machine-strip"></div></section>
+        <section id="workflow" class="panel workflow-panel"><div class="panel-heading"><div><div class="eyebrow">TỪ KẾ HOẠCH ĐẾN BÀN GIAO</div><h2>Luồng dự án</h2></div><div class="project-controls"><label class="run-select-label"><span>Dự án</span><select id="project-select" aria-label="Chọn dự án"><option value="">Chưa có dự án</option></select></label><button id="rename-project" class="text-button" disabled>Đổi tên</button><label id="run-select-label" class="run-select-label" hidden><span>Đợt công việc</span><select id="run-select" aria-label="Chọn đợt công việc"><option value="">Chưa có đợt công việc</option></select></label></div></div>
           <div id="run-summary" class="run-summary"><p class="empty">Kế hoạch và các task sẽ xuất hiện tại đây.</p></div>
           <div id="recovery-banner" class="recovery-banner" hidden></div>
           <div class="graph-toolbar"><span><i class="dot"></i>Đang chạy <i class="dot blue-dot"></i>Hoàn thành <i class="dot amber-dot"></i>Chờ / khôi phục</span><button id="focus-active" class="text-button">Đi tới task đang chạy ↗</button></div>
@@ -54,6 +54,7 @@
   </div>
   <div id="auth-layer" class="auth-layer" role="dialog" aria-modal="true" aria-labelledby="auth-title"><form id="auth-form" class="auth-card"><span class="brand-mark auth-mark">a<span>·</span></span><div class="eyebrow">AGENT OPERATIONS</div><h1 id="auth-title">Kết nối đội ngũ của bạn.</h1><p>Một nơi để theo dõi agent, luồng dự án<br>và tất cả file bàn giao.</p><label for="access-token">Mã truy cập Control Node</label><input id="access-token" type="password" required autocomplete="off" placeholder="Nhập ADMIN_TOKEN" autofocus><small>Mã ADMIN_TOKEN trong cấu hình Control Node. Mã chỉ được giữ trong tab hiện tại.</small><p id="auth-error" class="auth-error" role="alert" hidden></p><button id="connect-button" class="primary-button" type="submit">Mở dashboard <span>→</span></button><div class="auth-foot"><i class="dot"></i> Kết nối trực tiếp tới máy chủ hiện tại</div></form></div>
   <dialog id="task-dialog" class="task-dialog"><div class="drawer-head"><span class="eyebrow">CHI TIẾT CÔNG VIỆC</span><button id="close-task" class="icon-button" aria-label="Đóng chi tiết">×</button></div><div id="task-detail"></div></dialog>
+  <dialog id="project-name-dialog" class="project-name-dialog"><form id="project-name-form"><div class="drawer-head"><h2>Đổi tên dự án</h2><button id="cancel-project-name" class="icon-button" type="button" aria-label="Đóng">×</button></div><label for="project-name-input">Tên dự án</label><input id="project-name-input" maxlength="255" required placeholder="Ví dụ: Quản lý nhà hàng"><p>Tên này dùng để nhận diện dự án trên dashboard. Mã dự án và các file bàn giao được giữ nguyên.</p><p id="project-name-error" class="auth-error" role="alert" hidden></p><button id="save-project-name" class="primary-button" type="submit">Lưu tên dự án <span>→</span></button></form></dialog>
   <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
 </body>
 </html>
