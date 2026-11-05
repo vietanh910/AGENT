@@ -8,6 +8,8 @@ Luồng PM mới: [quản lý dự án theo module/task trên Linear](docs/MODUL
 
 [PM tự khôi phục công việc](docs/PM_AUTO_RECOVERY.md): khôi phục file, thử lại tác vụ và trực tiếp tạo tài liệu/code thay agent bị nghẽn; lưu tiến độ xử lý qua restart.
 
+[Dashboard realtime](docs/REALTIME_DASHBOARD.md): mở `/dashboard` trên Control Node để theo dõi agent, máy, luồng task và file nhận về cùng đường dẫn lưu thực tế.
+
 Hệ thống 10 AI Agent độc lập xây dựng bởi đội ngũ 5 kỹ sư:
 PM, SA, BA, PO, DEV, TESTER, DEVOPS, DBA, SCRUM_MASTER, SECURITY.
 

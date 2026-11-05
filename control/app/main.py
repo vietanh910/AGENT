@@ -190,6 +190,8 @@ def health_check() -> Dict[str, Any]:
 # Gắn toàn bộ router tiền tố /api/v1 và endpoint /metrics công khai
 app.include_router(api_v1_router)
 app.include_router(metrics_router)
+from control.app.dashboard_ui import router as dashboard_ui_router
+app.include_router(dashboard_ui_router)
 
 
 if __name__ == "__main__":

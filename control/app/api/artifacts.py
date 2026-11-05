@@ -64,7 +64,11 @@ async def upload_artifact(
     if isinstance(principal, WorkerPrincipal):
         default_creator = principal.allowed_agents[0] if principal.allowed_agents else "devops-01"
     final_created_by = created_by or meta_dict.get("created_by") or default_creator
-    extra_meta = meta_dict.get("metadata", {})
+    if isinstance(principal, WorkerPrincipal) and final_created_by not in principal.allowed_agents:
+        raise HTTPException(403, detail="Worker cannot upload artifacts as another agent")
+    extra_meta = dict(meta_dict.get("metadata", {}))
+    if isinstance(principal, WorkerPrincipal):
+        extra_meta.update({"source_worker_id": principal.worker_id, "source_machine": principal.machine_id})
 
     # 2. Đọc nội dung tệp
     try:
