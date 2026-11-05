@@ -1,5 +1,13 @@
 # AGENT - AI Team Monorepo
 
+Luồng PM mới: [quản lý dự án theo module/task trên Linear](docs/MODULE_PROJECTS.md), bàn giao artifact và kiểm thử sau từng task.
+
+[Chỉnh sửa dự án đã hoàn thành](docs/CHANGE_REQUESTS.md): kế thừa code/tài liệu từ phiên bản hiện tại, tạo đợt công việc mới trong cùng dự án Linear và lưu lịch sử phiên bản.
+
+[Báo cáo tổng kết Word](docs/PROJECT_REPORT.md): tự tạo file `.docx` khi hoàn tất dự án hoặc một phiên bản chỉnh sửa, tổng hợp tài liệu của các agent và cho phép tải về đọc.
+
+[PM tự khôi phục công việc](docs/PM_AUTO_RECOVERY.md): khôi phục file, thử lại tác vụ và trực tiếp tạo tài liệu/code thay agent bị nghẽn; lưu tiến độ xử lý qua restart.
+
 Hệ thống 10 AI Agent độc lập xây dựng bởi đội ngũ 5 kỹ sư:
 PM, SA, BA, PO, DEV, TESTER, DEVOPS, DBA, SCRUM_MASTER, SECURITY.
 

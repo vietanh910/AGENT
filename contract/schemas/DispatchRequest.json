@@ -119,7 +119,7 @@
           "default": "MEDIUM"
         },
         "timeout_seconds": {
-          "default": 300,
+          "default": 1000,
           "title": "Timeout Seconds",
           "type": "integer"
         }
@@ -142,7 +142,7 @@
   "description": "Yêu cầu điều phối tác vụ gửi tới Worker Host kèm callback_url và lần thử.",
   "properties": {
     "contract_version": {
-      "default": "1.3.0",
+      "default": "1.4.0",
       "title": "Contract Version",
       "type": "string"
     },

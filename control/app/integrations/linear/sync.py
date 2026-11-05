@@ -181,6 +181,10 @@ class LinearSyncService:
         data: Dict[str, Any],
         existing_link,
     ) -> Optional[str]:
+        root_run = data.get("reuse_project_run_id")
+        if root_run:
+            project = LinearLinkRepository.get_link(session, "PROJECT", root_run)
+            return project.linear_id if project else None
         name = data.get("name") or f"Run {run_id}"
         description = data.get("brief") or data.get("description", "")
         team_ids = [self.schema_cache.team_id]
@@ -226,6 +230,14 @@ class LinearSyncService:
         prj_link = LinearLinkRepository.get_link(session, "PROJECT", run_id)
         project_id = prj_link.linear_id if prj_link else None
 
+        milestone_id = None
+        milestone_local_id = data.get("milestone_local_id")
+        if milestone_local_id:
+            milestone_link = LinearLinkRepository.get_link(session, "MILESTONE", milestone_local_id)
+            if not milestone_link:
+                return None
+            milestone_id = milestone_link.linear_id
+
         # Parent Issue nếu là sub-task
         parent_id = None
         parent_task_id = data.get("parent_task_id")
@@ -263,6 +275,7 @@ class LinearSyncService:
             description=desc,
             team_id=self.schema_cache.team_id,
             project_id=project_id,
+            milestone_id=milestone_id,
             parent_id=parent_id,
             state_id=state_id,
             label_ids=label_ids,
@@ -283,8 +296,9 @@ class LinearSyncService:
             return None
         new_state = data.get("dispatch_state", "QUEUED")
         state_id = self.schema_cache.dispatch_to_state_id.get(new_state)
-        if state_id:
-            self.tracker.set_status(task_link.linear_id, state_id)
+        if not state_id:
+            return None
+        self.tracker.set_status(task_link.linear_id, state_id)
 
         # Cập nhật nhãn blocked nếu cần
         if new_state == "BLOCKED" and "blocked" in self.schema_cache.special_label_ids:
@@ -310,8 +324,9 @@ class LinearSyncService:
         status_val = data.get("status", "COMPLETED")
         disp_state = "COMPLETED" if status_val == "COMPLETED" else ("BLOCKED" if status_val == "BLOCKED" else "FAILED")
         state_id = self.schema_cache.dispatch_to_state_id.get(disp_state)
-        if state_id:
-            self.tracker.set_status(task_link.linear_id, state_id)
+        if not state_id:
+            return None
+        self.tracker.set_status(task_link.linear_id, state_id)
 
         # 2. Thêm Comment kết quả định dạng chuẩn
         comment_text = render_result_comment(
@@ -394,15 +409,15 @@ class LinearSyncService:
         run_id: str,
         data: Dict[str, Any],
     ) -> Optional[str]:
-        issue_a = data.get("issue_id")
-        issue_b = data.get("related_issue_id")
+        issue_a = data.get("issue_id") or data.get("source_task_id")
+        issue_b = data.get("related_issue_id") or data.get("target_task_id")
         link_a = LinearLinkRepository.get_link(session, "TASK", issue_a) if issue_a else None
         link_b = LinearLinkRepository.get_link(session, "TASK", issue_b) if issue_b else None
         if link_a and link_b:
             return self.tracker.add_relation(
                 issue_id=link_a.linear_id,
                 related_issue_id=link_b.linear_id,
-                relation_type=data.get("relation_type", "blocks"),
+                relation_type=data.get("relation_type") or data.get("type", "blocks"),
             )
         return None
 

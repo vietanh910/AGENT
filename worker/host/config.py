@@ -24,6 +24,7 @@ class WorkerAgentConfig(BaseModel):
     version: str = "1.0.0"
     path: Optional[str] = None
     capabilities: List[str] = Field(default_factory=list)
+    runner: str = "process"
 
 
 class WorkerHostConfig(BaseModel):

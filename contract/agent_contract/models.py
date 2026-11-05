@@ -19,7 +19,7 @@ from agent_contract.validators import (
     validate_task_result_status_and_error,
 )
 
-CONTRACT_VERSION: str = "1.3.0"
+CONTRACT_VERSION: str = "1.4.0"
 
 
 class AgentIdentity(BaseModel):

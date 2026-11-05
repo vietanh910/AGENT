@@ -408,3 +408,33 @@ def test_verify_linear_webhook_signature():
     assert verify_linear_webhook_signature(body, valid_sig, secret) is True
     assert verify_linear_webhook_signature(body, "invalid_sig", secret) is False
     assert verify_linear_webhook_signature(body, None, secret) is False
+
+
+@pytest.mark.parametrize("acknowledged_id", ["issue-a", None, "other-issue"])
+def test_status_update_requires_linear_mutation_acknowledgement(acknowledged_id):
+    import httpx
+    from control.app.services.circuit_breaker import CircuitBreakerRegistry
+    CircuitBreakerRegistry.reset_all()
+    sent = []
+    def respond(request):
+        sent.append(json.loads(request.content))
+        issue = {"id": acknowledged_id} if acknowledged_id else None
+        return httpx.Response(200, json={"data": {"issueUpdate": {"issue": issue}}})
+    client = LinearClient("offline-test-key", max_retries=1, transport=httpx.MockTransport(respond))
+    if acknowledged_id == "issue-a":
+        client.set_status("issue-a", "state-done")
+    else:
+        with pytest.raises(LinearClientError, match="did not confirm"):
+            client.set_status("issue-a", "state-done")
+    assert sent[0]["variables"] == {"id": "issue-a", "input": {"stateId": "state-done"}}
+
+
+def test_missing_completed_state_mapping_does_not_report_success(db_session_factory, fake_tracker, schema_cache):
+    service = LinearSyncService(fake_tracker, schema_cache, session_factory=db_session_factory)
+    service._throttle = lambda: None
+    with db_session_factory() as session:
+        issue_id = service.sync_entity_now(session, "TASK", "RUN-MAP-T1", "RUN-MAP", {"role": "DEV", "action": "coding"})
+        schema_cache.dispatch_to_state_id.pop("COMPLETED")
+        assert service.sync_entity_now(session, "RESULT", "RUN-MAP-T1", "RUN-MAP", {"status": "COMPLETED"}) is None
+        assert service.sync_entity_now(session, "STATUS", "RUN-MAP-T1", "RUN-MAP", {"dispatch_state": "COMPLETED"}) is None
+        assert fake_tracker.issues[issue_id]["state_id"] != schema_cache.state_name_to_id["Done"]

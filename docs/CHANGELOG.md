@@ -2,6 +2,11 @@
 
 Tất cả các thay đổi về Agent Contract sẽ được ghi lại tại tài liệu này.
 
+## [1.4.0] - 2026-11-05
+- Thêm action PM `recover_task` dùng capability `workflow_orchestration` hiện có, cho phép tạo tài liệu/code thay agent gặp lỗi theo yêu cầu người dùng.
+- Dùng trường metadata hiện có để gắn `dispatch_token` vào kết quả Worker, tránh nhận nhầm callback của lượt thực hiện cũ sau khôi phục.
+- Không thêm trường bắt buộc vào TaskRequest/TaskResult; PM không tự cấp verdict kiểm thử/bảo mật, nghiệm thu hoặc triển khai thật qua action phục hồi.
+
 ## [1.3.0] - 2026-11-04
 ### Bổ sung Metadata cho ArtifactRef (Prompt S6 - Artifact Store & GitHub)
 - Nâng `CONTRACT_VERSION` từ `"1.2.0"` lên `"1.3.0"`. `CONTRACT_MIN_VERSION` của các agent giữ nguyên `"1.0.0"`.

@@ -110,6 +110,7 @@ class OutboxService:
                         callback_url = excluded.callback_url,
                         secret = excluded.secret,
                         payload = excluded.payload,
+                        status = 'PENDING', attempts = 0, last_error = NULL,
                         next_retry_at = excluded.next_retry_at
                     """,
                     (task_id, callback_url, secret, payload_str, now_ts, now_iso),
@@ -198,7 +199,7 @@ class OutboxService:
         with self._lock, self._get_connection() as conn:
             if success:
                 # XÓA KHỎI OUTBOX
-                conn.execute("DELETE FROM outbox_messages WHERE task_id = ?", (task_id,))
+                conn.execute("DELETE FROM outbox_messages WHERE task_id = ? AND payload = ?", (task_id, row["payload"]))
                 conn.commit()
                 return True
             else:
@@ -209,9 +210,9 @@ class OutboxService:
                     """
                     UPDATE outbox_messages
                     SET attempts = ?, next_retry_at = ?, last_error = ?
-                    WHERE task_id = ?
+                    WHERE task_id = ? AND payload = ?
                     """,
-                    (attempts, next_retry, last_error, task_id),
+                    (attempts, next_retry, last_error, task_id, row["payload"]),
                 )
                 conn.commit()
                 return False

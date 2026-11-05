@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-contract"
-version = "1.0.0"
+version = "1.4.0"
 description = "Gói Contract dùng chung cho 10 AI Agent (Agent Contract v1.0)"
 readme = "README.md"
 requires-python = ">=3.11"

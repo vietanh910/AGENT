@@ -316,6 +316,8 @@ class OrchestratorEngine:
             run = sess.get(WorkflowRunModel, run_id)
             if not run:
                 raise ValueError(f"Không tìm thấy WorkflowRun '{run_id}'.")
+            if run.status == "COMPLETED" or ((run.run_metadata or {}).get("run_kind") == "change" and run.status in {"CANCELLED", "FAILED"}):
+                raise ValueError("This run has ended; create a project change request to modify a completed release")
 
             run.status = RunStatus.RUNNING.value
             run.updated_at = utc_now()

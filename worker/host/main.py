@@ -31,6 +31,7 @@ from worker.host.config import WorkerHostConfig
 from worker.host.heartbeat import HeartbeatClient
 from worker.host.outbox import OutboxService
 from worker.host.runner import RunnerRegistry
+from worker.host.process_agent import ProcessAgent
 
 logging.basicConfig(
     level=logging.INFO,
@@ -59,8 +60,13 @@ def build_worker_app(
         for a in cfg.agents:
             role_enum = AgentRole(a.role)
             # Khởi tạo FakeAgent cho Worker Host
-            fake_agent = FakeAgent(agent_id=a.agent_id, role=role_enum)
-            runner_registry.register_runner(a.agent_id, role_enum, fake_agent)
+            if a.runner == "fake":
+                agent = FakeAgent(agent_id=a.agent_id, role=role_enum)
+            elif a.runner == "process":
+                agent = ProcessAgent(a)
+            else:
+                raise ValueError(f"Unknown runner for {a.agent_id}: {a.runner}")
+            runner_registry.register_runner(a.agent_id, role_enum, agent)
 
     heartbeat_client = HeartbeatClient(config=cfg, runner_registry=runner_registry, outbox=outbox)
 

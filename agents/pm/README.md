@@ -1,5 +1,9 @@
 # Project Manager (PM) Agent (`pm-01`)
 
+**Luồng dự án mặc định hiện dùng Control Node:** lập backlog theo module/task trên Linear trước khi chạy, bàn giao SRS/code theo task nguồn và kiểm thử sau từng task. Xem [hướng dẫn cấu hình, API và CLI](../../docs/MODULE_PROJECTS.md). Phần PM Conductor bên dưới mô tả chế độ `PM_PROJECT_MODE=legacy` để tiếp tục dự án cũ.
+
+**Chỉnh sửa dự án đã hoàn thành:** `python cli.py project change <project_id> --request "Nội dung cần sửa"`. Xem [yêu cầu thay đổi và lịch sử phiên bản](../../docs/CHANGE_REQUESTS.md); cần chạy migration `002_project_releases` trước khi dùng.
+
 Agent chịu trách nhiệm quản lý dự án, phân tích yêu cầu sơ bộ, lập kế hoạch Sprint/Milestone, phân rã và phân công công việc, theo dõi tiến độ và điều phối tự động quy trình phát triển phần mềm qua PM Conductor.
 
 ---
@@ -13,7 +17,8 @@ Agent chịu trách nhiệm quản lý dự án, phân tích yêu cầu sơ bộ
 | `decompose_tasks` | `task_decomposition` | `tasks.json` (`BACKLOG`) | Phân rã công việc kỹ thuật chi tiết |
 | `assign_tasks` | `task_assignment` | `tasks.json` (`BACKLOG`) | Phân công task cho DEV, TESTER |
 | `track_progress` | `progress_tracking` | Cập nhật `tasks.json` | Theo dõi tỷ lệ hoàn thành tác vụ |
-| `report_status` | `progress_tracking` | `status-report.md` (`DOCUMENTATION`) | Báo cáo trạng thái 4 phần chuẩn |
+| `report_status` | `progress_tracking` | `status-report.md` (`DOCUMENTATION`) | Báo cáo trạng thái 4 phần chuẩn; khi managed hoàn tất, Control Node tổng hợp thêm `project-report-vN.docx` vào sản phẩm của task PM |
+| `recover_task` | `workflow_orchestration` | Artifact theo loại công việc gốc | PM trực tiếp tạo tài liệu/source khi agent bị nghẽn; source được ghép tích lũy, giữ các bước kiểm thử/nghiệm thu |
 | `start_project` | `workflow_orchestration` | `ProjectState` | Khởi chạy quy trình phát triển phần mềm tự động |
 | `resume_project` | `workflow_orchestration` | `ProjectState` | Tiếp tục dự án từ bước dở dang |
 | `get_project_state` | `workflow_orchestration` | `ProjectState` | Truy vấn trạng thái chi tiết của dự án |

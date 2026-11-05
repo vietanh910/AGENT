@@ -19,10 +19,10 @@ Tuân thủ nghiêm ngặt Prompt S8:
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import logging
 import re
-import sys
 import uuid
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from agent_contract.enums import AgentRole, ArtifactType
 from agent_contract.models import TaskRequest
+from agent_contract.project_plan import compile_module_plan
 from agent_contract.system_models import DispatchState, RunStatus, SystemEventType
 from control.app.config import settings
 from control.app.database.models import (
@@ -144,21 +145,17 @@ class PlanService:
         self.publisher = publisher
         self.linear_sync = linear_sync_service
 
-    def _call_pm_agent(
+    def _call_pm_proposal(
         self,
         prompt: str,
         project_id: str,
         errors: Optional[List[str]] = None,
+        context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Gọi PM Agent để lập kế hoạch dự án.
 
         Nếu môi trường có PMAgent (LocalWorker), chạy PMAgent. Nếu không có hoặc lỗi, ném ngoại lệ để retry/fallback.
         """
-        # Thêm agents/pm vào sys.path nếu cần
-        pm_dir = Path("agents/pm").resolve()
-        if pm_dir.exists() and str(pm_dir) not in sys.path:
-            sys.path.insert(0, str(pm_dir))
-
         instruction = prompt
         if errors:
             err_msg = "; ".join(errors)
@@ -168,17 +165,15 @@ class PlanService:
             )
 
         try:
-            from agents.pm.agent import PMAgent
-            from agents.pm.config import PMConfig
-            from schemas import ProjectPlan
+            from types import SimpleNamespace
+            from worker.host.process_agent import ProcessAgent
 
-            config = PMConfig()
+            environment = {}
             if settings.LLM_API_KEY and "placeholder" not in settings.LLM_API_KEY.lower():
-                config.llm_provider = settings.LLM_PROVIDER
-                config.llm_model = settings.LLM_MODEL
-                config.llm_api_key = settings.LLM_API_KEY
-                config.llm_base_url = settings.LLM_BASE_URL
-            pm = PMAgent(config)
+                environment = {"LLM_PROVIDER": settings.LLM_PROVIDER, "LLM_MODEL": settings.LLM_MODEL,
+                               "LLM_API_KEY": settings.LLM_API_KEY, "LLM_BASE_URL": settings.LLM_BASE_URL}
+            pm = ProcessAgent(SimpleNamespace(agent_id="pm-01", role="PM",
+                path=str(Path(__file__).resolve().parents[3] / "agents" / "pm")), environment)
 
             request = TaskRequest(
                 task_id=f"plan-req-{uuid.uuid4().hex[:6]}",
@@ -187,15 +182,15 @@ class PlanService:
                 role=AgentRole.PM,
                 action="create_plan",
                 instruction=instruction,
-                context={"project_name": project_id, "brief": prompt},
+                context={"project_name": project_id, "brief": prompt, "execution_plan": True, **(context or {})},
             )
             result = pm.handle(request)
 
             if result.status.value == "COMPLETED":
-                # PMAgent đã hoàn tất lập kế hoạch dự án
-                default_plan = build_default_plan(brief=prompt, project_id=project_id)
-                default_plan["overview"] = prompt
-                return default_plan
+                for output in result.outputs:
+                    if "module_plan" in output:
+                        return output
+                raise ValueError("PM returned no executable module plan")
 
         except Exception as e:
             logger.warning(f"Không thể gọi trực tiếp PMAgent ({e}). Chuyển sang xử lý fallback.")
@@ -203,6 +198,13 @@ class PlanService:
 
         # Nếu không có dữ liệu trả về
         raise ValueError("PMAgent không trả về dữ liệu kế hoạch hợp lệ.")
+
+    def _call_pm_agent(self, prompt, project_id, errors=None):
+        output = self._call_pm_proposal(prompt, project_id, errors)
+        plan = compile_module_plan(build_default_plan(prompt, project_id), output["module_plan"])
+        if output.get("planning_warning"):
+            plan["planning_warning"] = output["planning_warning"]
+        return plan
 
     def generate_plan_with_retry(
         self,
@@ -233,11 +235,17 @@ class PlanService:
 
         # Nếu sau 2 lần thử lại (tổng 3 lần) vẫn không hợp lệ -> fallback kế hoạch mẫu
         logger.warning("Đã hết số lần thử lại với PM Agent. Kích hoạt fallback kế hoạch mặc định.")
-        fallback_plan = build_default_plan(brief=prompt, project_id=project_id)
+        fallback_plan = compile_module_plan(build_default_plan(brief=prompt, project_id=project_id), {
+            "project_name": project_id, "overview": prompt,
+            "modules": [{"module_id": "core", "name": "Core functionality", "description": prompt,
+                "tasks": [{"task_id": "core", "title": "Implement requested scope", "description": prompt,
+                    "acceptance_criteria": ["Meets the supplied requirements"]}]}],
+        })
+        fallback_plan["planning_warning"] = "PM planning failed; review the fallback module before approval."
         # Đảm bảo fallback plan cũng vượt qua validator
         fallback_val = self.validator.validate(fallback_plan)
         if not fallback_val.valid:
-            logger.error(f"Fallback plan gặp lỗi không mong muốn: {fallback_val.errors}")
+            raise ValueError("Fallback plan is invalid: " + "; ".join(fallback_val.errors))
         return fallback_plan
 
     def save_plan_to_db(
@@ -250,6 +258,18 @@ class PlanService:
         run = WorkflowRunRepository.get_run(session, run_id)
         if not run:
             raise ValueError(f"Không tìm thấy WorkflowRun '{run_id}'.")
+
+        validation = self.validator.validate(plan)
+        if not validation.valid:
+            raise ValueError("Invalid execution plan: " + "; ".join(validation.errors))
+        if plan.get("run_kind") == "change":
+            if not (run.run_metadata or {}).get("base_release_id") == plan.get("baseline_release_id"):
+                raise ValueError("Change plans must be created through the project's change request endpoint")
+            from control.app.services.project_releases import pinned_baseline_artifacts
+            for task in plan["tasks"]:
+                pinned_baseline_artifacts(session, run, (task.get("context") or {}).get("baseline_artifact_ids", {}))
+        if session.execute(select(TaskModel.task_id).where(TaskModel.run_id == run_id)).first():
+            raise ValueError(f"Run '{run_id}' already has a persisted plan")
 
         # Lưu plan vào model run
         run.plan = plan
@@ -266,11 +286,18 @@ class PlanService:
                 id_mapping[old_id] = old_id
 
         scoped_tasks_data: List[Dict[str, Any]] = []
+        if any(len(tid) > 64 for tid in id_mapping.values()):
+            raise ValueError("Task IDs including the run prefix must fit in 64 characters")
         for t in tasks_data:
             t_copy = copy.deepcopy(t)
             old_id = str(t.get("task_id") or t.get("id") or "")
             t_copy["task_id"] = id_mapping[old_id]
             t_copy["depends_on"] = [id_mapping.get(d, d) for d in t.get("depends_on", [])]
+            ctx = t_copy.setdefault("context", {})
+            ctx["input_artifact_sources"] = {
+                kind: [id_mapping.get(source, source) for source in sources]
+                for kind, sources in ctx.get("input_artifact_sources", {}).items()
+            }
             scoped_tasks_data.append(t_copy)
 
         # Tạo tasks và quan hệ phụ thuộc trong MySQL
@@ -316,7 +343,7 @@ class PlanService:
         # Thiết lập trạng thái Run theo APPROVAL_MODE
         # APPROVAL_MODE=true (mặc định): chuyển AWAITING_APPROVAL
         # APPROVAL_MODE=false: chuyển RUNNING ngay
-        if settings.APPROVAL_MODE:
+        if settings.APPROVAL_MODE or plan.get("planning_warning"):
             run.status = RunStatus.AWAITING_APPROVAL.value
             logger.info(f"APPROVAL_MODE=True: Run '{run_id}' chuyển sang trạng thái AWAITING_APPROVAL.")
         else:
@@ -366,11 +393,12 @@ class PlanService:
             # 1. Project
             self.linear_sync.enqueue_change(
                 entity_type="PROJECT",
-                local_id=run.project_id,
+                local_id=run.run_id,
                 run_id=run.run_id,
                 data={
                     "name": plan.get("project_name", run.project_id),
                     "description": plan.get("overview", run.brief),
+                    "reuse_project_run_id": (run.run_metadata or {}).get("linear_project_root_run_id"),
                 },
             )
 
@@ -378,10 +406,10 @@ class PlanService:
             for epic in plan.get("epics", []):
                 self.linear_sync.enqueue_change(
                     entity_type="MILESTONE",
-                    local_id=epic.get("id"),
+                    local_id=f"{run.run_id}:{epic.get('id')}",
                     run_id=run.run_id,
                     data={
-                        "name": epic.get("name"),
+                        "name": f"{run.run_id} · {epic.get('name')}" if plan.get("run_kind") == "change" else epic.get("name"),
                         "description": epic.get("description", ""),
                         "project_id": run.project_id,
                     },
@@ -394,12 +422,19 @@ class PlanService:
                     local_id=t.task_id,
                     run_id=run.run_id,
                     data={
-                        "title": t.action,
+                        "title": (t.context or {}).get("title", t.action),
+                        "task_id": t.task_id,
+                        "run_id": run.run_id,
+                        "agent_id": t.agent_id,
+                        "dependencies": [dep for tid, dep in dependencies if tid == t.task_id],
                         "role": t.role,
                         "action": t.action,
                         "instruction": t.instruction,
                         "priority": 1,
                         "timeout_seconds": t.timeout_seconds,
+                        "module_id": (t.context or {}).get("module_id"),
+                        "milestone_local_id": f"{run.run_id}:{(t.context or {}).get('milestone_key') or (t.context or {}).get('epic')}",
+                        "acceptance_criteria": (t.context or {}).get("acceptance_criteria", []),
                     },
                 )
 
@@ -407,7 +442,7 @@ class PlanService:
             for tid, dep_id in dependencies:
                 self.linear_sync.enqueue_change(
                     entity_type="RELATION",
-                    local_id=f"{dep_id}-blocks-{tid}",
+                    local_id="rel-" + hashlib.sha256(f"{dep_id}:{tid}".encode()).hexdigest()[:32],
                     run_id=run.run_id,
                     data={
                         "source_task_id": dep_id,
@@ -417,11 +452,15 @@ class PlanService:
                 )
 
             # 5. Cổng phê duyệt (Gate Approval)
+            self.linear_sync.enqueue_change(
+                entity_type="APPROVAL", local_id=f"APP-{run.run_id}-APPROVE_PLAN", run_id=run.run_id,
+                data={"gate": "APPROVE_PLAN", "status": "PENDING", "brief": run.brief},
+            )
             for t in tasks:
                 if t.role == "GATE" or t.action.startswith("approve_"):
                     self.linear_sync.enqueue_change(
                         entity_type="APPROVAL",
-                        local_id=f"gate-{t.task_id}",
+                        local_id=f"APP-{run.run_id}-{t.action}",
                         run_id=run.run_id,
                         data={
                             "gate": t.action,
@@ -478,6 +517,9 @@ class PlanService:
         run = WorkflowRunRepository.get_run(session, run_id)
         if not run:
             raise ValueError(f"Không tìm thấy WorkflowRun '{run_id}'.")
+
+        if (run.plan or {}).get("execution_mode") == "modules":
+            return []  # The entire module backlog was compiled before execution.
 
         # 1. Trích xuất danh sách user stories
         stories: List[Dict[str, Any]] = []

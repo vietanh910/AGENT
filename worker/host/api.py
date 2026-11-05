@@ -168,13 +168,18 @@ def create_worker_api(
         # 3. IDEMPOTENCY:
         # Nếu task đã có trong cached result (đã chạy xong trước đó)
         cached_result = outbox.get_cached_result(task_id)
-        if cached_result:
+        token = request.context.get("dispatch_token")
+        if cached_result and (not token or cached_result.metadata.get("dispatch_token") == token):
             logger.info(f"Task '{task_id}' đã có kết quả trong cache outbox. Trả lại xác nhận 202.")
             response.status_code = 202
             return DispatchAck(task_id=task_id, accepted=True, reason="ALREADY_COMPLETED")
 
         # Nếu task đang chạy hiện tại
         if task_id in runner_registry.get_running_tasks():
+            runner = runner_registry.get_runner(agent_id)
+            if token and (not runner or runner.current_dispatch_token != token):
+                return JSONResponse(status_code=409,
+                    content=DispatchAck(task_id=task_id, accepted=False, reason="BUSY").model_dump())
             logger.info(f"Task '{task_id}' hiện đang chạy trên agent '{agent_id}'. Trả lại xác nhận 202.")
             response.status_code = 202
             return DispatchAck(task_id=task_id, accepted=True, reason="ALREADY_RUNNING")

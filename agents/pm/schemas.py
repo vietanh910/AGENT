@@ -2,6 +2,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from agent_contract.enums import AgentRole, TaskStatus
+from agent_contract.project_plan import ModulePlan, ChangePlan
 
 
 class Milestone(BaseModel):
@@ -72,7 +73,9 @@ class AnalyzeRequirementOutput(BaseModel):
 class CreatePlanOutput(BaseModel):
     """Đầu ra của action create_plan."""
 
-    plan: ProjectPlan
+    plan: ProjectPlan | None = None
+    module_plan: ModulePlan | ChangePlan | None = None
+    planning_warning: str | None = None
     artifact_uri: str
 
 

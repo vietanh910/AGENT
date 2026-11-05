@@ -47,6 +47,8 @@ def render_issue_title(task: Dict[str, Any]) -> str:
     role = task.get("role", "AGENT")
     action = task.get("action", "task").replace("_", " ").title()
     task_id = task.get("task_id", "")
+    if task.get("title"):
+        return f"[{role}] {task['title']}"
     return f"[{role}] {action}: {task_id}"
 
 
@@ -75,6 +77,8 @@ def render_issue_description(
         for art in artifact_links:
             arts_lines.append(f"- **{art.get('name', 'Artifact')}** (`{art.get('type', '')}`): `{art.get('uri', '')}`")
     arts_str = "\n".join(arts_lines) if arts_lines else "*Chưa có artifact kết quả*"
+    criteria = task.get("acceptance_criteria", [])
+    criteria_text = "\n".join(f"- {item}" for item in criteria) if criteria else "- Complete the required action and output artifacts."
 
     return f"""### 🤖 Agent Phụ Trách
 - **Tên Agent**: `{role_display} • {agent_id}`
@@ -85,9 +89,7 @@ def render_issue_description(
 {instruction}
 
 ### ✅ Acceptance Criteria
-1. Thực thi hoàn tất tác vụ action `{action}` theo đúng chuẩn Agent Contract.
-2. Không sinh ngoại lệ hoặc lỗi không kiểm soát trong quá trình xử lý.
-3. Xuất đầy đủ artifact kết quả kèm mã băm SHA-256 đối soát.
+{criteria_text}
 
 ### 🔗 Phụ Thuộc & Ngữ Cảnh Hệ Thống
 - **Task ID**: `{task_id}`

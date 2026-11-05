@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from agent_contract.enums import ErrorCode
+from agent_contract.quality import quality_verdict
 from agent_contract.system_models import DispatchState
 from control.app.config import settings
 from control.app.database.models import ApprovalModel, LinearLinkModel, TaskModel, WorkflowRunModel
@@ -66,6 +67,8 @@ class DeployGuardService:
             return False, f"Task kiểm thử của TESTER chưa hoàn thành (trạng thái: {tester_task.dispatch_state})."
 
         res = tester_task.result or {}
+        if quality_verdict(res) is not None:
+            return (True, None) if quality_verdict(res) == "PASS" else (False, "TESTER verdict FAIL")
         verdict = str(
             res.get("verdict")
             or res.get("metadata", {}).get("verdict")
@@ -95,6 +98,9 @@ class DeployGuardService:
             return False, f"Task đánh giá của SECURITY chưa hoàn thành (trạng thái: {sec_task.dispatch_state})."
 
         res = sec_task.result or {}
+        decision = quality_verdict(res)
+        if decision is not None:
+            return (True, None) if decision == "PASS" else (False, "SECURITY verdict FAIL / HIGH or CRITICAL findings")
         verdict = str(
             res.get("verdict")
             or res.get("metadata", {}).get("verdict")

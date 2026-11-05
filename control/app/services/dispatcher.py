@@ -29,9 +29,10 @@ from sqlalchemy.orm import Session
 from agent_contract.enums import AgentRole, AgentStatus, ErrorCode, Priority
 from agent_contract.models import AgentError, Constraints, TaskRequest
 from agent_contract.registry import AGENT_REGISTRY_DEFAULT
+from agent_contract.quality import quality_verdict
 from agent_contract.system_models import DispatchAck, DispatchRequest, DispatchState, RunStatus, SystemEventType
 from control.app.config import settings
-from control.app.database.models import AgentModel, TaskAttemptModel, TaskModel, WorkerModel, WorkflowRunModel, utc_now
+from control.app.database.models import AgentModel, TaskAttemptModel, TaskDependencyModel, TaskModel, WorkerModel, WorkflowRunModel, utc_now
 from control.app.database.repositories import AuditRepository, TaskRepository
 from control.app.queue.events import EventPublisher
 from control.app.queue.redis import RedisLockBackend
@@ -65,7 +66,7 @@ class DispatcherService:
         self.redis_client = redis_client
         self.publisher = publisher
         self.max_parallel_tasks = max_parallel_tasks
-        self.callback_base_url = callback_base_url or f"http://{settings.APP_HOST}:{settings.APP_PORT}"
+        self.callback_base_url = callback_base_url or settings.CONTROL_PUBLIC_URL
         self._worker_client_registry: Dict[str, WorkerClient] = {}
         self._local_worker = LocalWorkerClient(secret=settings.ADMIN_TOKEN)
         try:
@@ -83,7 +84,7 @@ class DispatcherService:
         if worker.worker_id in self._worker_client_registry:
             return self._worker_client_registry[worker.worker_id]
 
-        if agent.agent_id in ("pm-01", "devops-01") or worker.machine_id == "PC1":
+        if worker.base_url.startswith("local:"):
             return self._local_worker
 
         # Đọc secret từ WorkerSecretManager
@@ -131,6 +132,20 @@ class DispatcherService:
         if task.role == "GATE" or task.agent_id == "system-gate":
             logger.debug(f"Task '{task.task_id}' là cổng kiểm soát GATE, chờ người dùng phê duyệt.")
             return False
+
+        if run and (run.plan or {}).get("execution_mode") == "modules":
+            if not (run.run_metadata or {}).get("linear_plan_ready"):
+                return False
+            dependencies = session.scalars(select(TaskDependencyModel.depends_on_task_id).where(
+                TaskDependencyModel.task_id == task.task_id)).all()
+            for dependency_id in dependencies:
+                dependency = session.get(TaskModel, dependency_id)
+                if not dependency or dependency.dispatch_state != "COMPLETED":
+                    return False
+                if dependency.role != "GATE" and not (dependency.context or {}).get("quality_handled"):
+                    return False
+            if self.count_active_tasks(session, run_id=task.run_id):
+                return False
 
         # Kiểm tra ActionPolicy: vai trò có được phép thực hiện action này không
         if not ActionPolicy.is_action_allowed(task.role, task.action):
@@ -210,6 +225,23 @@ class DispatcherService:
             callback_url = f"{self.callback_base_url.rstrip('/')}/api/v1/tasks/{task.task_id}/result"
             attempt_number = task.attempts + 1
 
+            context = dict(task.context or {})
+            if context.get("require_dispatch_token") or (run and (run.plan or {}).get("execution_mode") == "modules"):
+                context["require_dispatch_token"] = True
+                context["dispatch_token"] = uuid.uuid4().hex
+                task.context = {**(task.context or {}), "require_dispatch_token": True, "dispatch_token": context["dispatch_token"]}
+            if run and (run.plan or {}).get("execution_mode") == "modules":
+                context["run_id"] = task.run_id
+                context["execution_mode"] = "modules"
+                context["project_tasks"] = [
+                    {"task_id": item.task_id, "title": (item.context or {}).get("title", item.action),
+                     "role": item.role, "status": "RUNNING" if item.task_id == task.task_id else (
+                         "BLOCKED" if item.action in {"run_test_suite", "security_review"} and quality_verdict(item.result) == "FAIL" and not (item.context or {}).get("quality_repaired")
+                         else item.dispatch_state),
+                     "module_id": (item.context or {}).get("module_id")}
+                    for item in session.scalars(select(TaskModel).where(TaskModel.run_id == task.run_id))
+                ]
+
             request = DispatchRequest(
                 task_id=task.task_id,
                 project_id=task.run_id,
@@ -217,7 +249,7 @@ class DispatcherService:
                 role=AgentRole(task.role) if isinstance(task.role, str) else task.role,
                 action=task.action,
                 instruction=task.instruction,
-                context=task.context or {},
+                context=context,
                 input_artifacts=select_input_artifacts(session, task),
                 callback_url=callback_url,
                 attempt=attempt_number,
@@ -227,9 +259,37 @@ class DispatcherService:
 
             client = self.get_worker_client(session, worker, agent)
             now = utc_now()
+            recovery_dispatch = bool(context.get("require_dispatch_token"))
+            if recovery_dispatch:
+                # Persist the new generation before HTTP: a fast callback may beat the dispatch ACK.
+                task.dispatch_state, task.attempts = "ASSIGNED", attempt_number
+                task.deadline, task.updated_at = TaskManager.calculate_deadline(task.timeout_seconds), now
+                task.version += 1
+                agent.current_task, agent.updated_at = task.task_id, now
+                TaskManager.record_attempt(session, task.task_id, attempt_number, worker.worker_id, "ASSIGNED")
+                session.commit()
 
             # Gọi worker dispatch (đồng bộ trong bối cảnh asyncio nếu có hoặc chạy async)
             ack = self._call_worker_dispatch_sync(client, request)
+
+            if recovery_dispatch:
+                session.refresh(task)
+                if task.dispatch_state != "ASSIGNED" or (task.context or {}).get("dispatch_token") != context["dispatch_token"]:
+                    return True  # A callback or cancellation has already resolved this generation.
+                if ack.accepted:
+                    worker_cb.record_success()
+                    AuditRepository.record(session, actor="DISPATCHER", action="TASK_DISPATCHED", target=task.task_id,
+                        run_id=task.run_id, result="ASSIGNED", details={"worker_id": worker.worker_id, "attempt": attempt_number})
+                    if self.publisher:
+                        self.publisher.publish(event_type=SystemEventType.TASK_DISPATCHED,
+                            payload={"task_id": task.task_id, "worker_id": worker.worker_id, "attempt": attempt_number},
+                            run_id=task.run_id, task_id=task.task_id, session=session)
+                    session.commit()
+                    return True
+                task.dispatch_state, task.deadline = "QUEUED", None
+                if agent.current_task == task.task_id:
+                    agent.current_task = None
+                session.commit()
 
             if ack.accepted:
                 # 202 ACCEPTED -> chuyển sang ASSIGNED
@@ -313,6 +373,10 @@ class DispatcherService:
                     return False
 
         except WorkerClientError as e:
+            if (task.context or {}).get("require_dispatch_token"):
+                session.refresh(task)
+                if task.dispatch_state == "COMPLETED":
+                    return True
             worker_cb.record_failure()
             logger.warning(f"Lỗi giao tiếp worker khi dispatch task '{task.task_id}': {e.message}")
             # Lỗi mạng hoặc timeout -> chuyển RETRY_WAIT với backoff

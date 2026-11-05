@@ -15,6 +15,7 @@ class ControlConfig(BaseSettings):
     APP_ENV: str = "development"
     APP_HOST: str = "0.0.0.0"
     APP_PORT: int = 8000
+    CONTROL_PUBLIC_URL: str = "http://127.0.0.1:8000"
 
     DATABASE_URL: str = (
         "mysql+pymysql://ai_user:ai_password_change_me@127.0.0.1:3307/ai_team?charset=utf8mb4"
@@ -49,6 +50,13 @@ class ControlConfig(BaseSettings):
     MAX_CONCURRENT_RUNS: int = 3
     MAX_RUN_RETRIES: int = 15
     LOG_LEVEL: str = "INFO"
+    PROJECT_COORDINATOR_ENABLED: bool = True
+    PROJECT_POLL_SECONDS: float = 2.0
+    PM_AUTO_RECOVERY: bool = True
+    PM_RECOVERY_RETRIES: int = 2
+    PM_RECOVERY_DELAY_SECONDS: float = 5.0
+    PM_RECOVERY_MAX_DELAY_SECONDS: float = 60.0
+    PM_STALL_SECONDS: float = 60.0
 
     # DevOps Staging Configuration
     STAGING_PORT_START: int = 8100

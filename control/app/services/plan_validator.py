@@ -57,6 +57,11 @@ MANDATORY_STEPS: List[Tuple[str, str]] = [
     ("DEVOPS", "health_check"),
 ]
 
+CHANGE_MANDATORY_STEPS = [pair for pair in MANDATORY_STEPS
+    if pair not in {("SA", "design_architecture"), ("DBA", "design_schema"), ("DEV", "implement_project")}]
+CHANGE_MANDATORY_STEPS.insert(5, ("DEV", "implement_feature"))
+CHANGE_MANDATORY_STEPS.insert(6, ("TESTER", "run_test_suite"))
+
 
 @dataclass
 class PlanValidationResult:
@@ -220,6 +225,9 @@ class PlanValidator:
         # Kiểm tra dangling references và cập nhật bậc vào (in_degree)
         seen_edges: Set[Tuple[str, str]] = set()
         for u, v in explicit_deps:
+            if u not in task_id_set:
+                errors.append(f"Unknown dependency consumer: '{u}'")
+                continue
             if not v:
                 continue
             if v not in task_id_set:
@@ -259,6 +267,39 @@ class PlanValidator:
             )
             return PlanValidationResult(valid=False, errors=errors)
 
+        if plan.get("execution_mode") == "modules":
+            is_change = plan.get("run_kind") == "change"
+            baseline = {a["artifact_id"]: a for a in plan.get("baseline_artifacts", [])}
+            if is_change and (not plan.get("baseline_release_id") or not baseline):
+                errors.append("Change plans must pin an accepted baseline release")
+            parents = defaultdict(set)
+            for consumer, producer in explicit_deps:
+                parents[consumer].add(producer)
+            for tid, task in task_map.items():
+                ancestors, pending = set(), list(parents[tid])
+                while pending:
+                    parent = pending.pop()
+                    if parent not in ancestors:
+                        ancestors.add(parent)
+                        pending.extend(parents[parent])
+                sources = (task.get("context") or {}).get("input_artifact_sources", {})
+                inherited = (task.get("context") or {}).get("baseline_artifact_ids", {})
+                if inherited and not is_change:
+                    errors.append(f"Task '{tid}' uses baseline artifacts outside a change request")
+                for kind in task.get("input_artifact_types", []):
+                    if not sources.get(kind) and not inherited.get(kind):
+                        errors.append(f"Task '{tid}' has no bound input producer for {kind}")
+                for kind, ids in inherited.items():
+                    if not isinstance(ids, list) or any(baseline.get(i, {}).get("type") != kind for i in ids):
+                        errors.append(f"Task '{tid}' has an invalid pinned baseline input for {kind}")
+                for kind, producers in sources.items():
+                    if not isinstance(producers, list):
+                        errors.append(f"Task '{tid}' has invalid artifact sources for {kind}")
+                        continue
+                    for producer in producers:
+                        if producer not in ancestors or task_map.get(producer, {}).get("output_artifact_type") != kind:
+                            errors.append(f"Task '{tid}' binds {kind} to an invalid/non-ancestor producer '{producer}'")
+
         # 5. Kiểm tra các bước bắt buộc từ khung software_delivery.yaml
         # Mỗi bước bắt buộc (role, action) phải xuất hiện trong kế hoạch
         # Và vị trí xuất hiện của chúng trong topo sort phải tuân thủ đúng thứ tự pipeline
@@ -275,7 +316,17 @@ class PlanValidator:
             a_str = str(t.get("action", "")).strip()
             task_action_pairs[(r_str, a_str)].append(pos_map[tid])
 
-        for step_role, step_action in MANDATORY_STEPS:
+        mandatory = CHANGE_MANDATORY_STEPS if plan.get("run_kind") == "change" else MANDATORY_STEPS
+        if plan.get("run_kind") == "change":
+            if any(t["action"] == "implement_project" for t in tasks):
+                errors.append("A change request must extend baseline source without creating a new project")
+            for flag, action in (("architecture_changed", "design_architecture"), ("database_changed", "design_schema")):
+                if plan.get(flag) and not any(t["action"] == action for t in tasks):
+                    errors.append(f"Missing requested design revision: {action}")
+            regression = next((t for t in tasks if t.get("task_id") == "change_regression"), None)
+            if not regression or regression.get("action") != "run_test_suite":
+                errors.append("Change request is missing the full project regression check")
+        for step_role, step_action in mandatory:
             step_key = (step_role, step_action)
             step_label = f"{step_role}.{step_action}"
 

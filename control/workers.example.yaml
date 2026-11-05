@@ -7,6 +7,12 @@
 # =============================================================================
 
 workers:
+  worker-pc1:
+    machine_id: PC1
+    base_url: http://127.0.0.1:8011
+    secret: worker_pc1_secret_token_change_me
+    allowed_agents: [pm-01, devops-01]
+
   worker-pc2:
     machine_id: "PC2"
     base_url: "http://26.28.90.248:8001"

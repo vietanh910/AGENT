@@ -1,0 +1,27 @@
+{
+  "project_name": "Thư viện trực tuyến",
+  "overview": "Cho phép gia hạn mượn sách tối đa hai lần",
+  "impact_summary": "Sửa module mượn trả, bổ sung số lần gia hạn vào dữ liệu; giữ nguyên danh mục sách và chức năng mượn trả hiện có.",
+  "architecture_changed": false,
+  "database_changed": true,
+  "modules": [
+    {
+      "module_id": "loans",
+      "name": "Mượn trả",
+      "description": "Bổ sung gia hạn cho lượt mượn đang hoạt động",
+      "tasks": [
+        {
+          "task_id": "renew",
+          "title": "Gia hạn mượn sách",
+          "description": "Cho phép gia hạn tối đa hai lần cho một lượt mượn; cập nhật ngày hết hạn và số lần gia hạn, giữ nguyên dữ liệu cũ.",
+          "acceptance_criteria": [
+            "Gia hạn lần một và lần hai thành công",
+            "Từ chối gia hạn lần thứ ba",
+            "Từ chối gia hạn lượt mượn đã trả",
+            "Các chức năng tìm kiếm, mượn và trả sách trước đó vẫn hoạt động"
+          ]
+        }
+      ]
+    }
+  ]
+}

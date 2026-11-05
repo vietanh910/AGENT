@@ -107,6 +107,11 @@ class TaskManager:
             agent_id = tdata.get("agent_id") or cls.resolve_agent_id_for_role(role_val)
             timeout = tdata.get("timeout_seconds", 1000)
 
+            context = dict(tdata.get("context") or {})
+            for key in ("title", "acceptance_criteria", "input_artifact_types", "output_artifact_type"):
+                if key in tdata:
+                    context[key] = tdata[key]
+
             task_payload = {
                 "task_id": tid,
                 "run_id": run_id,
@@ -114,7 +119,7 @@ class TaskManager:
                 "role": role_val,
                 "action": tdata["action"],
                 "instruction": tdata["instruction"],
-                "context": tdata.get("context", {}),
+                "context": context,
                 "dispatch_state": DispatchState.QUEUED.value,
                 "attempts": 0,
                 "max_attempts": tdata.get("max_attempts", 3),

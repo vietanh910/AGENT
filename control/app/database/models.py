@@ -1,8 +1,8 @@
 """control/app/database/models.py - Khai báo SQLAlchemy ORM Models cho Control Node PC1.
 
-11 bảng dữ liệu:
+13 bảng dữ liệu:
 - workers, agents, workflow_runs, tasks, task_dependencies, task_attempts,
-  artifacts, approvals, audit_logs, agent_events, linear_links.
+  artifacts, approvals, audit_logs, agent_events, linear_links, projects, project_releases.
 
 Tất cả bảng dùng InnoDB, charset utf8mb4, collation utf8mb4_unicode_ci.
 Thời gian UTC dạng DATETIME(6), cột linh hoạt dùng JSON của MySQL.
@@ -22,6 +22,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.mysql import DATETIME, JSON
 from sqlalchemy.orm import relationship
@@ -94,6 +95,39 @@ class WorkflowRunModel(Base):
 
     tasks = relationship("TaskModel", back_populates="run", cascade="all, delete-orphan")
     approvals = relationship("ApprovalModel", back_populates="run", cascade="all, delete-orphan")
+
+
+class ProjectModel(Base):
+    """Stable project identity and the currently accepted release."""
+    __tablename__ = "projects"
+    __table_args__ = (MYSQL_TABLE_ARGS,)
+
+    project_id = Column(String(64), primary_key=True)
+    name = Column(String(255), nullable=False)
+    root_run_id = Column(String(64), nullable=False)
+    current_release_id = Column(String(64), nullable=True)
+    active_change_run_id = Column(String(64), nullable=True)
+    release_counter = Column(Integer, nullable=False, default=0)
+    created_at = Column(DATETIME(fsp=6), nullable=False, default=utc_now)
+    updated_at = Column(DATETIME(fsp=6), nullable=False, default=utc_now, onupdate=utc_now)
+
+
+class ProjectReleaseModel(Base):
+    """Immutable artifact manifest; the original run remains untouched."""
+    __tablename__ = "project_releases"
+    __table_args__ = (
+        UniqueConstraint("project_id", "version", name="uq_project_release_version"),
+        UniqueConstraint("run_id", name="uq_project_release_run"),
+        MYSQL_TABLE_ARGS,
+    )
+
+    release_id = Column(String(64), primary_key=True)
+    project_id = Column(String(64), ForeignKey("projects.project_id"), nullable=False)
+    run_id = Column(String(64), ForeignKey("workflow_runs.run_id"), nullable=False)
+    version = Column(Integer, nullable=False)
+    base_release_id = Column(String(64), nullable=True)
+    manifest = Column(JSON, nullable=False)
+    created_at = Column(DATETIME(fsp=6), nullable=False, default=utc_now)
 
 
 class TaskModel(Base):

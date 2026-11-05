@@ -32,7 +32,7 @@
       "default": "MEDIUM"
     },
     "timeout_seconds": {
-      "default": 300,
+      "default": 1000,
       "title": "Timeout Seconds",
       "type": "integer"
     }

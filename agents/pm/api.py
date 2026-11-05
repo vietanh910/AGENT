@@ -51,6 +51,13 @@ app = FastAPI(
 )
 app.state.config = config
 
+from project_gateway import ControlGatewayError
+
+
+@app.exception_handler(ControlGatewayError)
+async def control_gateway_error(request: Request, exc: ControlGatewayError):
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
 task_lock = asyncio.Lock()
 security_scheme = HTTPBearer(auto_error=False)
 
@@ -386,10 +393,34 @@ class CreateProjectBody(BaseModel):
     auto_approve: bool = False
     allow_real_deploy: bool = False
     project_id: str | None = None
+    module_plan: dict[str, Any] | None = None
 
 
 class ApproveGateBody(BaseModel):
     gate: str
+
+
+class ChangeProjectBody(BaseModel):
+    brief: str
+    title: str | None = None
+    base_run_id: str | None = None
+    module_plan: dict[str, Any] | None = None
+
+
+@app.post("/projects/{project_id}/changes", summary="Request a change against the accepted project version")
+def request_project_change(project_id: str, body: ChangeProjectBody, token: str = Depends(verify_bearer_token)):
+    if config.pm_project_mode != "managed":
+        raise HTTPException(400, detail="Change requests require PM_PROJECT_MODE=managed")
+    from project_gateway import control_request, project_path
+    return control_request(config, "POST", project_path(project_id, "/changes"), body.model_dump(exclude_none=True), resource="projects")
+
+
+@app.get("/projects/{project_id}/releases", summary="List accepted project versions")
+def project_releases(project_id: str, token: str = Depends(verify_bearer_token)):
+    if config.pm_project_mode != "managed":
+        raise HTTPException(400, detail="Release history requires PM_PROJECT_MODE=managed")
+    from project_gateway import control_request, project_path
+    return control_request(config, "GET", project_path(project_id, "/releases"), resource="projects")
 
 
 # -----------------------------------------------------------------------------
@@ -397,6 +428,14 @@ class ApproveGateBody(BaseModel):
 # -----------------------------------------------------------------------------
 @app.post("/projects", summary="Tạo mới và khởi chạy dự án tự động trong background thread")
 def create_project(body: CreateProjectBody, token: str = Depends(verify_bearer_token)) -> dict[str, Any]:
+    if config.pm_project_mode == "managed":
+        from project_gateway import control_request
+        if body.auto_approve or body.allow_real_deploy:
+            raise HTTPException(status_code=400, detail="Managed projects use Control Node approval and deployment settings")
+        payload = {"brief": body.brief, "project_id": body.project_id}
+        if body.module_plan:
+            payload["module_plan"] = body.module_plan
+        return control_request(config, "POST", payload=payload)
     project_id = body.project_id or f"PROJ-{int(time.time())}"
     state = agent_instance.conductor.init_project(
         project_id=project_id,
@@ -424,6 +463,9 @@ def create_project(body: CreateProjectBody, token: str = Depends(verify_bearer_t
 
 @app.get("/projects", summary="Lấy danh sách các dự án")
 def get_projects(token: str = Depends(verify_bearer_token)) -> list[dict[str, Any]]:
+    if config.pm_project_mode == "managed":
+        from project_gateway import control_request
+        return control_request(config, "GET")
     projects = list_all_projects(config.data_dir)
     return [
         {
@@ -438,6 +480,9 @@ def get_projects(token: str = Depends(verify_bearer_token)) -> list[dict[str, An
 
 @app.get("/projects/{project_id}", summary="Lấy chi tiết trạng thái ProjectState của một dự án")
 def get_project_detail(project_id: str, token: str = Depends(verify_bearer_token)) -> dict[str, Any]:
+    if config.pm_project_mode == "managed":
+        from project_gateway import control_request, project_path
+        return control_request(config, "GET", project_path(project_id))
     state = load_project_state(project_id, config.data_dir)
     if not state:
         raise HTTPException(
@@ -453,6 +498,9 @@ def approve_project_gate(
     body: ApproveGateBody,
     token: str = Depends(verify_bearer_token),
 ) -> dict[str, Any]:
+    if config.pm_project_mode == "managed":
+        from project_gateway import control_request, project_path
+        return control_request(config, "POST", project_path(project_id, "/approve"), {"gate": body.gate})
     state = load_project_state(project_id, config.data_dir)
     if not state:
         raise HTTPException(
@@ -484,6 +532,9 @@ def approve_project_gate(
 
 @app.post("/projects/{project_id}/resume", summary="Tiếp tục chạy ngầm bước dở dang của dự án")
 def resume_project_api(project_id: str, token: str = Depends(verify_bearer_token)) -> dict[str, Any]:
+    if config.pm_project_mode == "managed":
+        from project_gateway import control_request, project_path
+        return control_request(config, "POST", project_path(project_id, "/resume"))
     state = load_project_state(project_id, config.data_dir)
     if not state:
         raise HTTPException(
@@ -509,6 +560,9 @@ def resume_project_api(project_id: str, token: str = Depends(verify_bearer_token
 
 @app.post("/projects/{project_id}/abort", summary="Chuyển trạng thái dự án thành ABORTED và dừng các bước tiếp theo")
 def abort_project_api(project_id: str, token: str = Depends(verify_bearer_token)) -> dict[str, Any]:
+    if config.pm_project_mode == "managed":
+        from project_gateway import control_request, project_path
+        return control_request(config, "POST", project_path(project_id, "/cancel"))
     state = load_project_state(project_id, config.data_dir)
     if not state:
         raise HTTPException(

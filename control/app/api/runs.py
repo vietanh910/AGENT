@@ -13,10 +13,11 @@ from sqlalchemy.orm import Session
 
 from agent_contract.enums import ErrorCode
 from agent_contract.models import AgentError, ArtifactRef
+from agent_contract.project_plan import ModulePlan, compile_module_plan
 from agent_contract.system_models import DispatchState, RunStatus, SystemEventType
 from control.app.api.dependencies import get_db, get_publisher, require_admin, require_authenticated
 from control.app.config import settings
-from control.app.database.models import ApprovalModel, TaskModel, WorkflowRunModel
+from control.app.database.models import ApprovalModel, ProjectModel, TaskModel, WorkflowRunModel
 from control.app.database.repositories import ApprovalRepository, AuditRepository, TaskRepository, WorkflowRunRepository
 from control.app.database.session import get_session_factory
 from control.app.orchestrator.engine import OrchestratorEngine
@@ -24,18 +25,19 @@ from control.app.queue.events import EventPublisher, get_event_publisher
 from control.app.security.authentication import AdminPrincipal, Principal
 from control.app.services.approval import ApprovalService
 from control.app.services.artifact_store import ArtifactStoreService, model_to_artifact_ref
-from control.app.services.plan_service import PlanService
+from control.app.services.plan_service import PlanService, build_default_plan
 
 router = APIRouter(prefix="/runs", tags=["Runs"])
 artifact_service = ArtifactStoreService()
 
 
 class CreateRunRequest(BaseModel):
-    run_id: Optional[str] = None
-    project_id: Optional[str] = Field(None, description="ID dự án")
+    run_id: Optional[str] = Field(None, max_length=24, pattern=r"^[A-Za-z0-9_-]+$")
+    project_id: Optional[str] = Field(None, max_length=64, description="ID dự án")
     prompt: Optional[str] = Field(None, description="Yêu cầu từ người dùng")
     brief: Optional[str] = Field(None, description="Mô tả tóm tắt yêu cầu phần mềm")
     plan: Optional[Dict[str, Any]] = None
+    module_plan: Optional[ModulePlan] = None
 
 
 class ApproveGateRequest(BaseModel):
@@ -68,6 +70,7 @@ def _background_plan_task(run_id: str, prompt: str, project_id: str) -> None:
             )
         except Exception as exc:
             # Ghi nhận lỗi nếu lập kế hoạch thất bại
+            session.rollback()
             import logging
             logging.getLogger(__name__).exception("Lỗi khi lập kế hoạch bất đồng bộ cho run %s: %s", run_id, exc)
             run = session.get(WorkflowRunModel, run_id)
@@ -98,6 +101,18 @@ def create_run(
 
     run_id = req.run_id or f"RUN-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
     project_id = req.project_id or f"PRJ-{uuid.uuid4().hex[:6].upper()}"
+
+    if req.plan and req.module_plan:
+        raise HTTPException(status_code=422, detail="Provide plan or module_plan, not both")
+    if req.module_plan:
+        req.plan = compile_module_plan(build_default_plan(effective_brief, project_id), req.module_plan.model_dump())
+    if req.plan:
+        if req.plan.get("run_kind") == "change":
+            raise HTTPException(422, detail="Use POST /projects/{project_id}/changes for changes to accepted releases")
+        from control.app.services.plan_validator import PlanValidator
+        validation = PlanValidator().validate(req.plan)
+        if not validation.valid:
+            raise HTTPException(status_code=422, detail={"code": "VALIDATION_ERROR", "message": "; ".join(validation.errors)})
 
     existing = WorkflowRunRepository.get_run(session, run_id)
     if existing:
@@ -130,6 +145,9 @@ def create_run(
         )
 
     initial_status = RunStatus.CREATED.value if req.plan else RunStatus.PLANNING.value
+    if session.get(ProjectModel, project_id) or session.scalar(select(WorkflowRunModel.run_id).where(
+            WorkflowRunModel.project_id == project_id).limit(1)):
+        raise HTTPException(409, detail="Project already exists; use its change request endpoint")
     run = WorkflowRunRepository.create_run(
         session,
         {
@@ -140,6 +158,8 @@ def create_run(
             "status": initial_status,
         },
     )
+    session.add(ProjectModel(project_id=project_id, name=(req.plan or {}).get("project_name", project_id),
+                             root_run_id=run_id, release_counter=0))
 
     AuditRepository.record(
         session,
@@ -177,6 +197,13 @@ def create_run(
     }
 
 
+@router.get("")
+def list_runs(session: Session = Depends(get_db), principal: Principal = Depends(require_authenticated)):
+    runs = session.scalars(select(WorkflowRunModel).order_by(WorkflowRunModel.created_at.desc()).limit(100)).all()
+    return [{"run_id": r.run_id, "project_id": r.project_id, "status": r.status,
+             "current_stage": r.current_stage, "metadata": r.run_metadata or {}} for r in runs]
+
+
 @router.get("/{run_id}")
 def get_run(
     run_id: str,
@@ -201,6 +228,7 @@ def get_run(
         "status": run.status,
         "brief": run.brief,
         "current_stage": run.current_stage,
+        "metadata": run.run_metadata or {},
         "created_at": run.created_at.isoformat() if run.created_at else None,
         "updated_at": run.updated_at.isoformat() if run.updated_at else None,
     }
@@ -223,6 +251,10 @@ def get_run_tasks(
             "agent_id": t.agent_id,
             "role": t.role,
             "action": t.action,
+            "title": (t.context or {}).get("title", t.action),
+            "module_id": (t.context or {}).get("module_id"),
+            "work_item_id": (t.context or {}).get("work_item_id"),
+            "input_artifact_sources": (t.context or {}).get("input_artifact_sources", {}),
             "dispatch_state": t.dispatch_state,
             "attempts": t.attempts,
             "version": t.version,

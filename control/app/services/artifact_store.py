@@ -151,21 +151,28 @@ class ArtifactStoreService:
         # 3. Tạo ID và URI cho artifact
         art_id = artifact_id or f"ART-{uuid.uuid4().hex[:12].upper()}"
         clean_name = sanitize_filename(filename)
+        existing = ArtifactRepository.get_artifact(session, art_id)
+        type_value = artifact_type.value if isinstance(artifact_type, ArtifactType) else str(artifact_type)
+        if existing and (existing.run_id, existing.task_id, existing.checksum, existing.type,
+                         existing.name, existing.version, existing.created_by) == (
+                run_id, task_id, actual_checksum, type_value, clean_name, version, created_by):
+            return existing  # Retry of the same immutable upload, never an overwrite.
 
         # 4. Lưu vật lý tại control/data/artifacts/<run_id>/<art_id>-<clean_name>
         run_dir = (self.base_dir / (run_id or "global")).resolve()
         run_dir.mkdir(parents=True, exist_ok=True)
 
         target_file = run_dir / f"{art_id}-{clean_name}"
-        if target_file.exists():
+        if target_file.exists() and (existing is not None or compute_sha256(target_file.read_bytes()) != actual_checksum):
             raise ArtifactStoreError(
                 f"Artifact với ID '{art_id}' và tên '{clean_name}' đã tồn tại! Không được phép ghi đè.",
                 status_code=409,
                 code=ErrorCode.ARTIFACT_ERROR,
             )
 
-        with open(target_file, "wb") as f:
-            f.write(content)
+        if not target_file.exists():
+            with open(target_file, "wb") as f:
+                f.write(content)
 
         # 5. Lưu siêu dữ liệu vào DB
         art_type_str = artifact_type.value if isinstance(artifact_type, ArtifactType) else str(artifact_type)
@@ -184,6 +191,12 @@ class ArtifactStoreService:
         meta["filename"] = clean_name
         meta["file_path"] = str(target_file.relative_to(Path(".").resolve()) if target_file.is_relative_to(Path(".").resolve()) else target_file)
         meta["size_bytes"] = len(content)
+        # A content-addressed second copy lets PM repair a lost handoff without changing its identity.
+        recovery_path = (self.base_dir / "_recovery" / actual_checksum).resolve()
+        recovery_path.parent.mkdir(parents=True, exist_ok=True)
+        if not recovery_path.exists():
+            recovery_path.write_bytes(content)
+        meta["recovery_copy"] = str(recovery_path)
 
         model = ArtifactRepository.save_artifact(
             session=session,
@@ -286,6 +299,46 @@ def select_input_artifacts(session: Session, task: TaskModel) -> list[ArtifactRe
 
     if not required_types:
         return []
+
+    # Explicit bindings keep module documents and exact code revisions together.
+    bindings = (task.context or {}).get("input_artifact_sources") or {}
+    baseline = (task.context or {}).get("baseline_artifact_ids") or {}
+    if bindings or baseline:
+        from sqlalchemy import select
+        refs = []
+        if baseline:
+            from control.app.database.models import WorkflowRunModel
+            from control.app.services.project_releases import pinned_baseline_artifacts, ReleaseError
+            try:
+                run = session.get(WorkflowRunModel, task.run_id)
+                refs.extend(model_to_artifact_ref(a) for a in pinned_baseline_artifacts(session, run, baseline))
+            except ReleaseError as exc:
+                raise ArtifactStoreError(str(exc), code=ErrorCode.MISSING_CONTEXT) from exc
+        for kind, source_ids in bindings.items():
+            for source_id in source_ids:
+                source_task = session.get(TaskModel, source_id)
+                if not source_task or source_task.run_id != task.run_id or source_task.dispatch_state != "COMPLETED":
+                    raise ArtifactStoreError(f"Input producer is not completed: {source_id}", code=ErrorCode.MISSING_CONTEXT)
+                models = session.scalars(select(ArtifactModel).where(
+                    ArtifactModel.run_id == task.run_id, ArtifactModel.task_id == source_id,
+                    ArtifactModel.type == kind,
+                ).order_by(ArtifactModel.created_at.desc())).all()
+                declared = (source_task.result or {}).get("artifacts")
+                if isinstance(declared, list):
+                    current_ids = {ref.get("artifact_id") for ref in declared if isinstance(ref, dict)}
+                    models = [model for model in models if model.artifact_id in current_ids]
+                if not models:
+                    raise ArtifactStoreError(f"Missing {kind} from {source_id}", code=ErrorCode.MISSING_CONTEXT)
+                # A producer may output several files of the same type. Preserve all of them.
+                names = set()
+                for model in models:
+                    if model.name not in names:
+                        refs.append(model_to_artifact_ref(model))
+                        names.add(model.name)
+        for required_type in required_types:
+            if not any(ref.type == required_type for ref in refs):
+                raise ArtifactStoreError(f"Missing bound input: {required_type.value}", code=ErrorCode.MISSING_CONTEXT)
+        return list({ref.artifact_id: ref for ref in refs}.values())
 
     # 2. Truy vấn bản mới nhất cho từng loại artifact trong cùng run_id
     selected_refs: list[ArtifactRef] = []

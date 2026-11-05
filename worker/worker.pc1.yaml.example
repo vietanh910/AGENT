@@ -1,0 +1,18 @@
+# Run PC1 agents through the same durable artifact and result pipeline as PC2..PC5.
+worker_id: worker-pc1
+machine_id: PC1
+control_url: http://127.0.0.1:8000
+secret: worker_pc1_secret_token_change_me
+listen_host: 127.0.0.1
+listen_port: 8011
+heartbeat_interval_seconds: 10
+outbox_db_path: worker/data/outbox_pc1.db
+agents:
+  - agent_id: pm-01
+    role: PM
+    path: agents/pm
+    capabilities: [project_planning, task_decomposition, task_assignment, progress_tracking, workflow_orchestration, task_dispatch]
+  - agent_id: devops-01
+    role: DEVOPS
+    path: agents/devops
+    capabilities: [git, docker, ci_cd, deployment, health_check, monitoring]

@@ -20,8 +20,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 
-from control.app.database.models import utc_now
+from control.app.database.models import ApprovalModel, WorkflowRunModel, utc_now
 from control.app.database.repositories import (
     ApprovalRepository,
     AuditRepository,
@@ -119,7 +120,7 @@ class LinearPollingService:
         run_id = ""
         gate = ""
         if local_id.startswith("APP-"):
-            parts = local_id[4:].split("-", 1)
+            parts = local_id[4:].rsplit("-", 1)
             run_id = parts[0]
             gate = parts[1] if len(parts) > 1 else ""
         else:
@@ -168,6 +169,9 @@ class LinearPollingService:
                 break
 
         if approved and decision:
+            current = session.get(ApprovalModel, local_id)
+            if current and current.status == decision:
+                return False
             logger.info("Nhận quyết định phê duyệt từ Linear: %s (run=%s, gate=%s) bởi %s", decision, run_id, gate, decided_by)
             ApprovalRepository.record_decision(
                 session=session,
@@ -177,6 +181,13 @@ class LinearPollingService:
                 decided_by=decided_by,
                 comment=reason,
             )
+            run = session.get(WorkflowRunModel, run_id)
+            if run:
+                if decision == "APPROVED":
+                    from control.app.services.approval import ApprovalService
+                    ApprovalService().approve(session, run_id, gate=gate, decided_by=decided_by, notes=reason)
+                else:
+                    run.status = "BLOCKED"
             AuditRepository.record(
                 session=session,
                 action=f"LINEAR_GATE_{decision}",

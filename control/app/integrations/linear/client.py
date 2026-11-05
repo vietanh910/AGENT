@@ -460,7 +460,10 @@ class LinearClient:
             }
         }
         """
-        self.execute_query(mutation, {"id": issue_id, "input": {"stateId": state_id}})
+        data = self.execute_query(mutation, {"id": issue_id, "input": {"stateId": state_id}})
+        updated = (data.get("issueUpdate") or {}).get("issue") or {}
+        if updated.get("id") != issue_id:
+            raise LinearClientError("Linear did not confirm the issue status update")
 
     def set_labels(self, issue_id: str, label_ids: List[str]) -> None:
         """Cập nhật danh sách nhãn của issue."""

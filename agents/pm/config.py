@@ -69,6 +69,9 @@ class PMConfig(BaseSettings):
 
     # Cấu hình Conductor / Tự động hóa dự án (v1.1.0)
     pm_auto_approve: bool = False
+    pm_project_mode: str = "managed"
+    control_url: str = "http://127.0.0.1:8000"
+    control_admin_token: str = ""
     pm_allow_real_deploy: bool = False
     max_fix_loops: int = 3
     max_tasks_per_project: int = 60

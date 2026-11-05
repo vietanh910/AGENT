@@ -199,6 +199,10 @@ def read_artifact(
         )
 
     target_path = _check_safe_filename(target_name, base_dir)
+    if isinstance(ref, ArtifactRef) and norm_uri.startswith("artifacts/"):
+        target_path = _check_safe_filename(norm_uri[len("artifacts/"):], base_dir)
+    if not target_path.is_file() and isinstance(ref, ArtifactRef):
+        target_path = _check_safe_filename(f"inbox/{ref.name}", base_dir)
 
     if not target_path.exists() or not target_path.is_file():
         raise ArtifactError(f"File artifact không tồn tại: '{target_name}'")

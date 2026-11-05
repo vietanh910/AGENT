@@ -44,6 +44,7 @@ async def lifespan(app: FastAPI):
     """Quản lý vòng đời khởi động và kết thúc của Control Node Gateway."""
     stop_event = asyncio.Event()
     watchdog_task = None
+    project_task = None
 
     try:
         # 1. Khởi tạo và kiểm tra database, nạp danh bạ 10 agent mặc định
@@ -65,6 +66,9 @@ async def lifespan(app: FastAPI):
                 publisher=publisher,
             )
         )
+        if settings.PROJECT_COORDINATOR_ENABLED:
+            from control.app.services.project_runtime import run_project_loop
+            project_task = asyncio.create_task(run_project_loop(stop_event, redis_client, publisher))
     except Exception as e:
         # Nếu đang ở môi trường test không có db sống, bỏ qua để test mock
         pass
@@ -73,6 +77,11 @@ async def lifespan(app: FastAPI):
 
     # Dọn dẹp khi tắt server
     stop_event.set()
+    if project_task:
+        try:
+            await asyncio.wait_for(asyncio.shield(project_task), timeout=2.0)
+        except asyncio.TimeoutError:
+            project_task.cancel()
     if watchdog_task:
         try:
             await asyncio.wait_for(watchdog_task, timeout=2.0)

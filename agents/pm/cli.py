@@ -1,3 +1,4 @@
+from __future__ import annotations
 
 def print_project_table(state: ProjectState) -> None:
     header = f"{'STT':<4} | {'BƯỚC':<26} | {'ROLE':<8} | {'ACTION/GATE':<24} | {'STATUS':<16} | {'TRY':<4} | {'ARTIFACTS'}"
@@ -26,6 +27,7 @@ def print_project_table(state: ProjectState) -> None:
     print("=" * len(header) + "\n")
 
 import time
+import json
 from conductor.state import (
     ProjectState,
     ProjectStatus,
@@ -92,6 +94,7 @@ def main() -> None:
     p_start.add_argument("--auto-approve", action="store_true", help="Tự động duyệt qua các cổng kiểm soát")
     p_start.add_argument("--allow-real-deploy", action="store_true", help="Cho phép triển khai thật (context.execute=true)")
     p_start.add_argument("--mock", action="store_true", help="Chạy ở chế độ Mock LLM")
+    p_start.add_argument("--module-plan", type=str, help="File JSON containing project_name, overview and ordered modules/tasks")
 
     # status
     p_status = proj_sub.add_parser("status", help="Xem trạng thái chi tiết của dự án")
@@ -101,7 +104,7 @@ def main() -> None:
     # approve
     p_approve = proj_sub.add_parser("approve", help="Phê duyệt thủ công cổng kiểm soát")
     p_approve.add_argument("project_id", type=str, help="Mã dự án (project_id)")
-    p_approve.add_argument("--gate", required=True, choices=["approve_scope", "approve_deploy"], help="Tên cổng kiểm soát")
+    p_approve.add_argument("--gate", required=True, choices=["APPROVE_PLAN", "approve_scope", "approve_prod", "approve_deploy"], help="Tên cổng kiểm soát")
 
     # resume
     p_resume = proj_sub.add_parser("resume", help="Tiếp tục chạy dự án từ bước dở dang")
@@ -113,6 +116,15 @@ def main() -> None:
 
     # list
     proj_sub.add_parser("list", help="Liệt kê danh sách các dự án")
+    p_change = proj_sub.add_parser("change", help="Chỉnh sửa dự án từ phiên bản đã bàn giao")
+    p_change.add_argument("project_id", help="Stable project_id, not run_id")
+    change_input = p_change.add_mutually_exclusive_group(required=True)
+    change_input.add_argument("--request", help="Mô tả yêu cầu chỉnh sửa")
+    change_input.add_argument("--request-file", help="File chứa yêu cầu chỉnh sửa")
+    p_change.add_argument("--base-run", help="Kiểm tra phiên bản gốc đang là phiên bản hiện tại")
+    p_change.add_argument("--module-plan", help="File JSON kê khai các module bị ảnh hưởng")
+    p_history = proj_sub.add_parser("history", help="Xem lịch sử phiên bản đã bàn giao")
+    p_history.add_argument("project_id")
 
 
     args = parser.parse_args()
@@ -252,6 +264,42 @@ def main() -> None:
 
 
     elif args.command == "project":
+        if config.pm_project_mode != "managed" and args.proj_command in {"change", "history"}:
+            raise ValueError("Change requests and version history require PM_PROJECT_MODE=managed")
+        if config.pm_project_mode == "managed":
+            from project_gateway import control_request, project_path
+            command = args.proj_command
+            if command == "change":
+                brief = args.request or Path(args.request_file).read_text(encoding="utf-8")
+                payload = {"brief": brief}
+                if args.base_run:
+                    payload["base_run_id"] = args.base_run
+                if args.module_plan:
+                    payload["module_plan"] = json.loads(Path(args.module_plan).read_text(encoding="utf-8"))
+                result = control_request(config, "POST", project_path(args.project_id, "/changes"), payload, resource="projects")
+            elif command == "history":
+                result = control_request(config, "GET", project_path(args.project_id, "/releases"), resource="projects")
+            elif command == "start":
+                if args.auto_approve or args.allow_real_deploy:
+                    raise ValueError("Managed projects use Control Node approval and deployment settings; omit these legacy flags")
+                payload = {"brief": Path(args.brief_file).read_text(encoding="utf-8")}
+                if args.module_plan:
+                    payload["module_plan"] = json.loads(Path(args.module_plan).read_text(encoding="utf-8"))
+                result = control_request(config, "POST", payload=payload)
+            elif command == "list":
+                result = control_request(config, "GET")
+            else:
+                suffix = {"status": "", "approve": "/approve", "resume": "/resume", "abort": "/cancel"}[command]
+                payload = {"gate": args.gate} if command == "approve" else None
+                result = control_request(config, "GET" if command == "status" else "POST",
+                                         project_path(args.project_id, suffix), payload)
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+            if command == "status" and args.watch:
+                while result.get("status") not in {"COMPLETED", "FAILED", "CANCELLED", "BLOCKED"}:
+                    time.sleep(2)
+                    result = control_request(config, "GET", project_path(args.project_id))
+                    print(json.dumps(result, indent=2, ensure_ascii=False))
+            return
         use_mock = getattr(args, "mock", False) or not bool(config.llm_api_key.strip())
         llm = LLMClient(config=config, mock=use_mock)
         agent = PMAgent(config=config, llm=llm)

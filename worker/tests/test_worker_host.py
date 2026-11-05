@@ -101,6 +101,31 @@ async def worker_client(
 class TestWorkerHostAPI:
     """1. Kiểm tra các endpoint API trên Worker Host."""
 
+    async def test_recovery_generation_does_not_reuse_old_cached_result(self, worker_client, runner_registry, outbox_service, monkeypatch):
+        old = TaskResult(task_id="task-new-generation", agent_id="sa-01", status="COMPLETED", summary="Old result",
+            metadata={"dispatch_token": "old"})
+        outbox_service.save_result(old.task_id, "http://control/callback", "secret", old)
+        submitted = []
+        monkeypatch.setattr(runner_registry, "submit_task", lambda request: submitted.append(request) or True)
+        payload = {"task_id": old.task_id, "project_id": "PRJ-1", "agent_id": "sa-01", "role": "SA",
+            "action": "design_architecture", "instruction": "Recreate the architecture", "callback_url": "http://control/callback",
+            "context": {"dispatch_token": "new"}}
+        response = await worker_client.post("/tasks", json=payload)
+        assert response.status_code == 202 and len(submitted) == 1
+        assert response.json().get("reason") != "ALREADY_COMPLETED"
+        payload["context"]["dispatch_token"] = "old"
+        response = await worker_client.post("/tasks", json=payload)
+        assert response.json()["reason"] == "ALREADY_COMPLETED" and len(submitted) == 1
+
+    async def test_recovery_does_not_treat_an_old_running_generation_as_the_new_one(self, worker_client, runner_registry):
+        runner = runner_registry.get_runner("sa-01")
+        runner.current_task_id, runner.current_dispatch_token = "task-still-running", "old"
+        payload = {"task_id": "task-still-running", "project_id": "PRJ-1", "agent_id": "sa-01", "role": "SA",
+            "action": "design_architecture", "instruction": "Recover architecture", "callback_url": "http://control/callback",
+            "context": {"dispatch_token": "new"}}
+        assert (await worker_client.post("/tasks", json=payload)).status_code == 409
+        runner.current_task_id, runner.current_dispatch_token = None, None
+
     async def test_unauthenticated_request_returns_401(self, worker_client: httpx.AsyncClient):
         # Gọi không có token (xóa header Authorization) phải nhận 401
         resp = await worker_client.get("/agents", headers={"Authorization": ""})
@@ -265,6 +290,22 @@ class TestWorkerHostAPI:
 @pytest.mark.asyncio
 class TestOutboxResilience:
     """2. Kiểm tra độ bền vững của Outbox SQLite."""
+
+    async def test_old_flush_cannot_delete_a_new_recovery_result(self, temp_outbox_db):
+        outbox = OutboxService(db_path=temp_outbox_db)
+        old = TaskResult(task_id="task-recovery-race", agent_id="sa-01", status="COMPLETED", summary="Old generation",
+            metadata={"dispatch_token": "old"})
+        new = old.model_copy(update={"summary": "New generation", "metadata": {"dispatch_token": "new"}})
+        outbox.save_result(old.task_id, "http://control/callback", "secret", old)
+
+        async def response_while_new_result_arrives(request):
+            outbox.save_result(new.task_id, "http://control/callback", "secret", new)
+            return httpx.Response(200, json={"status": "ignored_stale_attempt"})
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(response_while_new_result_arrives)) as client:
+            assert await outbox.flush_task(old.task_id, client)
+        assert outbox.get_pending_count() == 1
+        assert outbox.get_cached_result(new.task_id).metadata["dispatch_token"] == "new"
 
     async def test_save_before_send_and_delete_only_on_200(self, temp_outbox_db: str):
         outbox = OutboxService(db_path=temp_outbox_db)

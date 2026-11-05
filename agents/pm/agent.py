@@ -29,6 +29,7 @@ from agent_contract.models import (
     make_error,
 )
 from agent_contract.registry import ACTION_MAP, CAPABILITY_REGISTRY
+from agent_contract.project_plan import ModulePlan, ChangePlan
 from config import PMConfig
 from llm import LLMClient, LLMError
 from prompt import PM_SYSTEM_PROMPT, build_messages, check_missing_context
@@ -346,6 +347,11 @@ class BaseAgent:
 
 
 class PMAgent(BaseAgent):
+    @action("recover_task", capability="workflow_orchestration")
+    def handle_recover_task(self, request: TaskRequest) -> TaskResult:
+        from recovery import recover
+        return recover(self, request)
+
     """Project Manager Agent độc lập đảm nhiệm lập kế hoạch, phân rã và điều phối dự án."""
 
     def __init__(
@@ -480,6 +486,57 @@ class PMAgent(BaseAgent):
                     questions=missing,
                 ),
                 summary="Bị chặn do thiếu thông tin lập kế hoạch.",
+            )
+
+        if request.context.get("execution_plan"):
+            proposal_model = ChangePlan if request.context.get("change_request") else ModulePlan
+            supplied = request.context.get("modules")
+            if supplied:
+                proposal = proposal_model.model_validate({
+                    "project_name": request.context.get("project_name", request.project_id),
+                    "overview": request.instruction, "modules": supplied,
+                    "impact_summary": request.context.get("impact_summary", "Review requested changes against the baseline"),
+                    "architecture_changed": request.context.get("architecture_changed", False),
+                    "database_changed": request.context.get("database_changed", False),
+                })
+            elif not self.llm.mock or self.llm.mock_responder:
+                messages = build_messages(
+                    system_prompt=PM_SYSTEM_PROMPT + "\nPlan business modules in execution order, "
+                    "each containing concrete implementation tasks with acceptance criteria. "
+                    "Include all requested scope. Shared analysis, architecture, testing and delivery "
+                    "steps will be supplied by the workflow engine.",
+                    request=request, output_schema=proposal_model.model_json_schema(),
+                )
+                if request.context.get("change_request"):
+                    messages[0]["content"] += (
+                        "\nThis is a change to an existing accepted release. Inspect baseline_documents and baseline_modules. "
+                        "Plan only affected/new modules, using existing module_id values where applicable. "
+                        "Explain impact_summary, set architecture_changed/database_changed when required, "
+                        "and preserve unrelated behavior. Do not plan project scaffolding."
+                    )
+                proposal = self.llm.complete_json(messages, proposal_model)
+            else:
+                proposal = proposal_model.model_validate({
+                    "project_name": request.context.get("project_name", request.project_id),
+                    "overview": request.instruction,
+                    "modules": [{"module_id": "core", "name": "Core functionality",
+                        "description": request.instruction,
+                        "tasks": [{"task_id": "core", "title": "Implement requested scope",
+                            "description": request.instruction,
+                            "acceptance_criteria": ["Meets the supplied requirements"]}]}],
+                })
+            ref = save_artifact(
+                name="module-plan.json", type=ArtifactType.PLAN,
+                content=proposal.model_dump_json(indent=2), created_by=self.identity.agent_id,
+                artifact_dir=self.config.artifact_dir,
+            )
+            return TaskResult(
+                task_id=request.task_id, agent_id=request.agent_id, status=TaskStatus.COMPLETED,
+                summary=f"Planned {len(proposal.modules)} modules before execution.",
+                outputs=[CreatePlanOutput(module_plan=proposal, artifact_uri=ref.uri,
+                    planning_warning="PM is using a mock LLM; review this fallback module before execution."
+                    if not supplied and self.llm.mock and not self.llm.mock_responder else None,
+                ).model_dump(mode="json")], artifacts=[ref],
             )
 
         plan = None
@@ -736,6 +793,14 @@ class PMAgent(BaseAgent):
         pending = sum(1 for t in tasks if t.status in [TaskStatus.PENDING, TaskStatus.CANCELLED])
 
         percent = round((completed / total * 100.0), 1) if total > 0 else 0.0
+        if request.context.get("execution_mode") == "modules":
+            snapshot = request.context.get("project_tasks", [])
+            total = len(snapshot)
+            completed = sum(t["status"] == "COMPLETED" for t in snapshot)
+            in_progress = sum(t["status"] in {"RUNNING", "ASSIGNED"} for t in snapshot)
+            blocked = sum(t["status"] in {"BLOCKED", "FAILED"} for t in snapshot)
+            pending = sum(t["status"] in {"QUEUED", "PENDING", "RETRY_WAIT"} for t in snapshot)
+            percent = round(completed / total * 100, 1) if total else 0.0
 
         output_data = TrackProgressOutput(
             total_tasks=total,
@@ -744,7 +809,7 @@ class PMAgent(BaseAgent):
             pending_count=pending,
             blocked_count=blocked,
             progress_percent=percent,
-            artifact_uri="artifacts/tasks.json",
+            artifact_uri=None if request.context.get("execution_mode") == "modules" else "artifacts/tasks.json",
         )
 
         return TaskResult(
@@ -777,16 +842,25 @@ class PMAgent(BaseAgent):
         in_progress_items = [f"{t.task_id}: {t.title} ({t.assignee_role.value})" for t in tasks if t.status == TaskStatus.RUNNING]
         blocked_items = [f"{t.task_id}: {t.title} ({t.assignee_role.value})" for t in tasks if t.status == TaskStatus.BLOCKED]
         next_items = [f"{t.task_id}: {t.title} ({t.assignee_role.value})" for t in tasks if t.status == TaskStatus.PENDING]
+        managed = request.context.get("execution_mode") == "modules"
+        if managed:
+            snapshot = request.context.get("project_tasks", [])
+            def describe(states):
+                return [f"{t['task_id']}: {t['title']} ({t['role']})" for t in snapshot if t["status"] in states]
+            completed_items = describe({"COMPLETED"})
+            in_progress_items = describe({"RUNNING", "ASSIGNED"})
+            blocked_items = describe({"BLOCKED", "FAILED"})
+            next_items = describe({"QUEUED", "PENDING", "RETRY_WAIT"})
 
         # Đảm bảo mỗi mục có ít nhất một dòng tóm tắt
         if not completed_items:
-            completed_items = ["Đã hoàn thành phân tích yêu cầu sơ bộ và thiết lập backlog."]
+            completed_items = ["Chưa có task hoàn thành."] if managed else ["Đã hoàn thành phân tích yêu cầu sơ bộ và thiết lập backlog."]
         if not in_progress_items:
-            in_progress_items = ["Đang tiến hành lập kế hoạch và phân rã các task kỹ thuật."]
+            in_progress_items = ["Không có task đang chạy."] if managed else ["Đang tiến hành lập kế hoạch và phân rã các task kỹ thuật."]
         if not blocked_items:
             blocked_items = ["Không có blocker nào ngăn cản tiến độ hiện tại."]
         if not next_items:
-            next_items = ["Triển khai Sprint 1 và bàn giao task cho DEV & TESTER."]
+            next_items = ["Không có task đang chờ."] if managed else ["Triển khai Sprint 1 và bàn giao task cho DEV & TESTER."]
 
         report = StatusReport(
             completed=completed_items,
@@ -846,6 +920,20 @@ class PMAgent(BaseAgent):
     def handle_start_project(self, request: TaskRequest) -> TaskResult:
         """Khởi động quy trình phần mềm tự động bằng PM Conductor theo software_delivery.yaml."""
         brief = request.context.get("brief") or request.instruction
+        if self.config.pm_project_mode == "managed":
+            from project_gateway import control_request
+            payload = {"brief": brief, "project_id": request.project_id}
+            if request.context.get("module_plan"):
+                payload["module_plan"] = request.context["module_plan"]
+            if request.context.get("change_request"):
+                from project_gateway import project_path
+                payload["base_run_id"] = request.context.get("base_run_id")
+                result = control_request(self.config, "POST", project_path(request.project_id, "/changes"),
+                                         payload, resource="projects")
+            else:
+                result = control_request(self.config, "POST", payload=payload)
+            return TaskResult(task_id=request.task_id, agent_id=request.agent_id, status=TaskStatus.RUNNING,
+                              summary=f"Project planned and scheduled by Control Node: {result['run_id']}", outputs=[result])
         auto_approve = bool(request.context.get("auto_approve", self.config.pm_auto_approve))
         project_id = request.project_id or f"PROJ-{int(time.time())}"
 
@@ -881,6 +969,11 @@ class PMAgent(BaseAgent):
     def handle_resume_project(self, request: TaskRequest) -> TaskResult:
         """Tiếp tục quy trình phần mềm tự động từ bước dở dang."""
         project_id = request.context.get("project_id") or request.project_id
+        if self.config.pm_project_mode == "managed":
+            from project_gateway import control_request, project_path
+            result = control_request(self.config, "POST", project_path(request.context.get("run_id") or project_id, "/resume"))
+            return TaskResult(task_id=request.task_id, agent_id=request.agent_id, status=TaskStatus.RUNNING,
+                              summary="Project resumed by Control Node", outputs=[result])
         state = self.conductor.resume_project(project_id)
         status_enum = (
             TaskStatus.COMPLETED if state.status == ProjectStatus.COMPLETED
@@ -904,6 +997,11 @@ class PMAgent(BaseAgent):
     def handle_get_project_state(self, request: TaskRequest) -> TaskResult:
         """Lấy trạng thái chi tiết của một dự án do PM Conductor quản lý."""
         project_id = request.context.get("project_id") or request.project_id
+        if self.config.pm_project_mode == "managed":
+            from project_gateway import control_request, project_path
+            result = control_request(self.config, "GET", project_path(request.context.get("run_id") or project_id))
+            return TaskResult(task_id=request.task_id, agent_id=request.agent_id, status=TaskStatus.COMPLETED,
+                              summary="Project state from Control Node", outputs=[result])
         state = load_project_state(project_id, self.config.data_dir)
         if not state:
             return failed_result(

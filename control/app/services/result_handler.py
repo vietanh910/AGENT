@@ -75,6 +75,15 @@ class ResultHandler:
                 status_code=404,
             )
 
+        # A former owner may still be draining its old result after PM took over.
+        # Acknowledge that exact historical owner without accepting its stale output.
+        original = (task.context or {}).get("recovery_original") or {}
+        if ((task.context or {}).get("require_dispatch_token")
+                and original.get("agent_id") == result.agent_id != task.agent_id
+                and worker.can_operate_agent(result.agent_id)
+                and result.metadata.get("dispatch_token") != (task.context or {}).get("dispatch_token")):
+            return {"status": "ignored_stale_attempt", "task_id": task_id}
+
         # 3. Kiểm tra bảo mật Worker isolation
         if not worker.can_operate_agent(task.agent_id):
             AuditRepository.record(
@@ -114,6 +123,11 @@ class ResultHandler:
             raise PermissionDeniedException(
                 f"ActionPolicy từ chối: Role '{task.role}' không được phép thực hiện action '{task.action}'."
             )
+
+        if (task.context or {}).get("require_dispatch_token") and (
+                result.metadata.get("dispatch_token") != (task.context or {}).get("dispatch_token")
+                or task.dispatch_state not in {"ASSIGNED", "RUNNING"}):
+            return {"status": "ignored_stale_attempt", "task_id": task_id}
 
         # 4. Kiểm tra IDEMPOTENCY:
         # Nếu task đã ở trạng thái kết thúc (COMPLETED hoặc CANCELLED), bỏ qua an toàn và trả 200

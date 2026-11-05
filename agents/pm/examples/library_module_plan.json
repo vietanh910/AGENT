@@ -1,0 +1,24 @@
+{
+  "project_name": "Thư viện trực tuyến",
+  "overview": "Quản lý danh mục sách và mượn trả",
+  "modules": [
+    {
+      "module_id": "catalog",
+      "name": "Danh mục sách",
+      "description": "Thêm sách và tra cứu danh mục",
+      "tasks": [
+        {"task_id": "create", "title": "Thêm sách", "description": "Lưu sách với tên, tác giả và số lượng", "acceptance_criteria": ["Sách hợp lệ được lưu", "Từ chối số lượng âm"]},
+        {"task_id": "search", "title": "Tìm kiếm sách", "description": "Tìm sách theo tên hoặc tác giả", "acceptance_criteria": ["Trả về đúng sách phù hợp", "Trả danh sách rỗng khi không có kết quả"]}
+      ]
+    },
+    {
+      "module_id": "loans",
+      "name": "Mượn trả",
+      "description": "Mượn và trả sách đã có trong danh mục",
+      "tasks": [
+        {"task_id": "borrow", "title": "Mượn sách", "description": "Ghi nhận lượt mượn và cập nhật số sách khả dụng", "acceptance_criteria": ["Giảm số lượng khả dụng khi mượn", "Không cho mượn khi hết sách"]},
+        {"task_id": "return", "title": "Trả sách", "description": "Đóng lượt mượn và khôi phục số sách khả dụng", "acceptance_criteria": ["Ghi nhận ngày trả", "Không cho trả lại lượt mượn đã đóng"]}
+      ]
+    }
+  ]
+}

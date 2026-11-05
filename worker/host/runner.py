@@ -77,6 +77,7 @@ class AgentRunner:
 
         self.status: AgentStatus = AgentStatus.IDLE
         self.current_task_id: Optional[str] = None
+        self.current_dispatch_token: Optional[str] = None
         self._cancel_event = threading.Event()
         self._lock = threading.RLock()
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"runner-{agent_id}")
@@ -103,6 +104,7 @@ class AgentRunner:
 
             self.status = AgentStatus.RUNNING
             self.current_task_id = request.task_id
+            self.current_dispatch_token = request.context.get("dispatch_token")
             self._cancel_event.clear()
 
         # Thực thi trong thread riêng biệt
@@ -150,7 +152,11 @@ class AgentRunner:
         inbox_dir = self._get_agent_inbox_dir()
         effective_control_url = self._get_effective_control_url(request)
 
+        from collections import Counter
+        duplicate_names = Counter(art.name for art in request.input_artifacts)
         for art in request.input_artifacts:
+            if duplicate_names[art.name] > 1:
+                art.name = sanitize_filename(f"{art.artifact_id}_{art.name}")
             # URI github:// thì bỏ qua, agent tự clone/checkout qua git
             if art.uri.startswith("github://"):
                 logger.debug(f"Bỏ qua tải artifact GitHub: '{art.uri}' (agent tự dùng git).")
@@ -203,6 +209,7 @@ class AgentRunner:
                     target_file = inbox_dir / sanitize_filename(art.name)
                     with open(target_file, "wb") as f:
                         f.write(content)
+                    art.uri = f"artifacts/inbox/{target_file.name}"
                     logger.info(f"Đã lưu input artifact vào '{target_file}' (size={len(content)} bytes).")
 
                 except Exception as e:
@@ -228,26 +235,27 @@ class AgentRunner:
 
         # Danh sách artifact cần upload: từ index.json hoặc từ result.artifacts
         artifacts_to_upload: List[Dict[str, Any]] = []
+        indexed_artifacts: Dict[str, Dict[str, Any]] = {}
 
         if index_file.exists():
             try:
                 with open(index_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     if isinstance(data, list):
-                        artifacts_to_upload.extend(data)
+                        indexed_artifacts = {item["artifact_id"]: item for item in data if isinstance(item, dict) and item.get("artifact_id")}
             except Exception as e:
                 logger.warning(f"Không thể đọc file {index_file}: {e}")
 
-        # Nếu index.json rỗng nhưng trong result.artifacts có file cục bộ
-        if not artifacts_to_upload and result.artifacts:
-            for art in result.artifacts:
-                if not art.uri.startswith("artifact://") and not art.uri.startswith("github://"):
-                    artifacts_to_upload.append(art.model_dump())
+        # The result is authoritative; an incomplete index must not drop other declared files.
+        for art in result.artifacts:
+            if not art.uri.startswith("artifact://") and not art.uri.startswith("github://"):
+                artifacts_to_upload.append({**indexed_artifacts.get(art.artifact_id, {}), **art.model_dump(mode="json")})
 
         if not artifacts_to_upload:
             return result
 
         uploaded_refs: List[ArtifactRef] = []
+        uploaded_by_source_id: Dict[str, ArtifactRef] = {}
         client = self._http_client or httpx.Client(timeout=60.0)
 
         for item in artifacts_to_upload:
@@ -262,8 +270,9 @@ class AgentRunner:
             if not file_path.exists():
                 file_path = artifact_dir / name
             if not file_path.exists():
-                logger.warning(f"Không tìm thấy file vật lý cho artifact '{name}' tại {file_path}. Bỏ qua upload.")
-                continue
+                return failed_result(request, make_error(ErrorCode.ARTIFACT_ERROR,
+                    f"Declared output file is missing: {name}", retryable=False),
+                    summary=f"Cannot hand off missing output file: {name}")
 
             try:
                 with open(file_path, "rb") as f:
@@ -271,7 +280,9 @@ class AgentRunner:
 
                 checksum = hashlib.sha256(file_bytes).hexdigest()
                 upload_meta = {
-                    "artifact_id": item.get("artifact_id"),
+                    "artifact_id": "ART-" + hashlib.sha256(
+                        f"{request.project_id}:{request.task_id}:{item.get('artifact_id')}:{checksum}".encode()
+                    ).hexdigest()[:32].upper(),
                     "name": name,
                     "type": item.get("type", "OTHER"),
                     "run_id": request.project_id,
@@ -279,7 +290,7 @@ class AgentRunner:
                     "version": item.get("version", "1.0"),
                     "checksum": checksum,
                     "created_by": self.agent_id,
-                    "metadata": item.get("metadata", {}),
+                    "metadata": {**item.get("metadata", {}), "source_artifact_id": item.get("artifact_id")},
                 }
 
                 upload_url = f"{effective_control_url}/api/v1/artifacts"
@@ -303,6 +314,7 @@ class AgentRunner:
                 res_data = resp.json()
                 uploaded_art_ref = ArtifactRef.model_validate(res_data)
                 uploaded_refs.append(uploaded_art_ref)
+                uploaded_by_source_id[item["artifact_id"]] = uploaded_art_ref
                 logger.info(f"Upload artifact '{name}' thành công -> URI: {uploaded_art_ref.uri}")
 
             except Exception as e:
@@ -316,20 +328,7 @@ class AgentRunner:
 
         # Cập nhật lại danh sách artifacts trong TaskResult
         if uploaded_refs:
-            updated_artifacts: List[ArtifactRef] = []
-            uploaded_by_name = {a.name: a for a in uploaded_refs}
-
-            for existing_art in result.artifacts:
-                if existing_art.name in uploaded_by_name:
-                    updated_artifacts.append(uploaded_by_name[existing_art.name])
-                else:
-                    updated_artifacts.append(existing_art)
-
-            for u_art in uploaded_refs:
-                if not any(a.artifact_id == u_art.artifact_id for a in updated_artifacts):
-                    updated_artifacts.append(u_art)
-
-            result.artifacts = updated_artifacts
+            result.artifacts = [uploaded_by_source_id.get(ref.artifact_id, ref) for ref in result.artifacts]
 
         return result
 
@@ -397,6 +396,9 @@ class AgentRunner:
             if result.status == TaskStatus.COMPLETED:
                 result = self._upload_agent_artifacts(request, result)
 
+        if request.context.get("dispatch_token"):
+            result.metadata["dispatch_token"] = request.context["dispatch_token"]
+
         # 4. GHI VÀO OUTBOX SQLITE TRƯỚC TIÊN
         self.outbox.save_result(
             task_id=task_id,
@@ -408,6 +410,7 @@ class AgentRunner:
         # 5. Giải phóng trạng thái Agent về IDLE ngay khi chạy xong
         with self._lock:
             self.current_task_id = None
+            self.current_dispatch_token = None
             self.status = AgentStatus.IDLE
             self._cancel_event.clear()
 

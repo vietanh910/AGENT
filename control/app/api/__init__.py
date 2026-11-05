@@ -9,9 +9,11 @@ from control.app.api.runs import router as runs_router
 from control.app.api.tasks import router as tasks_router
 from control.app.api.webhooks import router as webhooks_router
 from control.app.api.workers import router as workers_router
+from control.app.api.projects import router as projects_router
 
 api_v1_router = APIRouter(prefix="/api/v1")
 api_v1_router.include_router(runs_router)
+api_v1_router.include_router(projects_router)
 api_v1_router.include_router(agents_router)
 api_v1_router.include_router(workers_router)
 api_v1_router.include_router(tasks_router)

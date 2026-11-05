@@ -25,8 +25,9 @@ def test_capabilities_are_mutually_exclusive_across_roles():
 
 def test_action_map_for_pm_and_devops():
     """Kiểm tra ACTION_MAP của PM và DevOps ánh xạ đúng tới capability của role đó."""
-    # PM: 10 actions (6 ban đầu + 4 cho workflow/dispatch ở v1.1.0)
-    assert len(ACTION_MAP[AgentRole.PM]) == 10
+    # PM: 10 existing actions plus explicitly authorized recovery in v1.4.0.
+    assert len(ACTION_MAP[AgentRole.PM]) == 11
+    assert ACTION_MAP[AgentRole.PM]["recover_task"] == "workflow_orchestration"
     for action, cap in ACTION_MAP[AgentRole.PM].items():
         assert cap in CAPABILITY_REGISTRY[AgentRole.PM], (
             f"Action '{action}' của PM ánh xạ tới capability '{cap}' không có trong registry"

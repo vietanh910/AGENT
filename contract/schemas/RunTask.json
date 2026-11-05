@@ -189,7 +189,7 @@
       "description": "Kết quả thực thi tác vụ trả về từ Agent.",
       "properties": {
         "contract_version": {
-          "default": "1.3.0",
+          "default": "1.4.0",
           "title": "Contract Version",
           "type": "string"
         },
@@ -315,7 +315,7 @@
       "type": "integer"
     },
     "timeout_seconds": {
-      "default": 300,
+      "default": 1000,
       "title": "Timeout Seconds",
       "type": "integer"
     },

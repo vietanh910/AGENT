@@ -162,6 +162,7 @@ class TestWorkerArtifactWorkflow:
             instruction="Implement feature from spec",
             callback_url="http://mock-control/api/v1/tasks/TASK-DEV-001/result",
             input_artifacts=[input_art, github_art],
+            context={"dispatch_token": "recovery-generation-2"},
         )
 
         # Chạy trực tiếp qua thread runner
@@ -176,6 +177,7 @@ class TestWorkerArtifactWorkflow:
         cached = outbox.get_cached_result("TASK-DEV-001")
         assert cached is not None
         assert cached.status == TaskStatus.COMPLETED
+        assert cached.metadata["dispatch_token"] == "recovery-generation-2"
 
     def test_download_artifact_checksum_mismatch_blocks_task(self, temp_dirs: dict[str, Any]):
         mock_control = MockControlServer()
@@ -249,6 +251,14 @@ class TestWorkerArtifactWorkflow:
         # Giả lập agent tạo ra 1 artifact trên đĩa và ghi vào index.json
         test_file = temp_dirs["artifacts"] / "test_cases.json"
         test_file.write_text('{"cases": ["test_login", "test_logout"]}', encoding="utf-8")
+        # An agent must explicitly return this task's deliverables; stale index files
+        # from earlier tasks are not valid outputs of the current task.
+        fake_agent.handle = lambda request: TaskResult(
+            task_id=request.task_id, agent_id=request.agent_id, status=TaskStatus.COMPLETED,
+            summary="Created test cases", artifacts=[ArtifactRef(
+                artifact_id="ART-LOCAL-01", name="test_cases.json", type=ArtifactType.TEST_CASE,
+                uri="test_cases.json", created_by="tester-01", created_at=datetime.now(timezone.utc))],
+        )
 
         index_file = temp_dirs["artifacts"] / "index.json"
         index_file.write_text(
@@ -308,6 +318,12 @@ class TestWorkerArtifactWorkflow:
         # Tạo artifact để upload
         test_file = temp_dirs["artifacts"] / "test_report.json"
         test_file.write_text('{"verdict": "PASS"}', encoding="utf-8")
+        fake_agent.handle = lambda request: TaskResult(
+            task_id=request.task_id, agent_id=request.agent_id, status=TaskStatus.COMPLETED,
+            summary="Created test report", artifacts=[ArtifactRef(
+                artifact_id="ART-LOCAL-02", name="test_report.json", type=ArtifactType.TEST_REPORT,
+                uri="test_report.json", created_by="tester-01", created_at=datetime.now(timezone.utc))],
+        )
 
         index_file = temp_dirs["artifacts"] / "index.json"
         index_file.write_text(

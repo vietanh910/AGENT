@@ -80,6 +80,7 @@ ACTION_MAP: dict[AgentRole, dict[str, str]] = {
         "resume_project": "workflow_orchestration",
         "get_project_state": "workflow_orchestration",
         "dispatch_task": "task_dispatch",
+        "recover_task": "workflow_orchestration",
     },
     AgentRole.DEVOPS: {
         "git_operation": "git",
